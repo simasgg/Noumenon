@@ -506,3 +506,8 @@ noumenon_*.wav
 # Microsoft redistributables it bundles. Large binaries - published to GitHub Releases, never committed.
 /dist/
 /installer/redist/
+
+# Working notes stay local: the plan, the Claude Code guidance and the docs/ checklists are not
+# published. A README is the one Markdown file that belongs in the remote.
+*.md
+!README.md

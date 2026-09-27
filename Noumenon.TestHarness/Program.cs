@@ -11,6 +11,9 @@ using Noumenon.TestHarness;
 //     --seed <n>           randomize the oscillator patch from this seed (default: the init patch)
 //     --amount <0..1>      how far the randomizer strays from a tonal drone (default 1)
 //     --p1 <st> / --p2 <st>  pitch inputs in semitones (default 0)
+//     --sample <path>      load a WAV/AIFF into sample key 0 and select it
+//     --input <path>       feed a WAV as the live input (the FX identity); shorter files are zero-padded
+//     --gate <seconds>     fire a MIDI gate at this time (repeatable)
 //     --set <Name=Value>   override one parameter (enum name or display name; repeatable)
 //     --out <path>         output file (default ./noumenon_out.wav, 24-bit stereo)
 //     --dump-params        print the parameter table and exit
@@ -21,6 +24,9 @@ ulong? seed = null;
 var amount = 1f;
 var p1 = 0f;
 var p2 = 0f;
+string? samplePath = null;
+string? inputPath = null;
+var gates = new List<double>();
 var outputPath = Path.GetFullPath("noumenon_out.wav");
 var overrides = new List<(string Name, float Value)>();
 var dumpParams = false;
@@ -43,6 +49,12 @@ for (var i = 0; i < args.Length; i++)
         p1 = float.Parse(args[++i], CultureInfo.InvariantCulture);
     else if (Is(a, "--p2") && hasValue)
         p2 = float.Parse(args[++i], CultureInfo.InvariantCulture);
+    else if (Is(a, "--sample") && hasValue)
+        samplePath = args[++i];
+    else if (Is(a, "--input") && hasValue)
+        inputPath = args[++i];
+    else if (Is(a, "--gate") && hasValue)
+        gates.Add(double.Parse(args[++i], CultureInfo.InvariantCulture));
     else if (Is(a, "--out") && hasValue)
         outputPath = Path.GetFullPath(args[++i]);
     else if (Is(a, "--set") && hasValue)
@@ -76,6 +88,13 @@ var bank = engine.Parameters;
 if (seed is { } s)
     Randomizer.Randomize(bank, s, RandomizeScope.All, amount);
 
+if (samplePath is not null)
+{
+    var slot = engine.Samples.Load(0, samplePath);
+    bank.Set(ParamId.SamplerSelect, 0);
+    Console.WriteLine($"Sample: {slot.Name}  ({slot.Data.Length} frames @ {slot.Data.SampleRate} Hz, {(slot.Data.IsStereo ? "stereo" : "mono")}, {slot.Data.Seconds.ToString("0.0", CultureInfo.InvariantCulture)} s) on key 0");
+}
+
 foreach (var (name, value) in overrides)
 {
     var info = ParameterTable.Find(name);
@@ -99,8 +118,41 @@ DescribePatch(bank);
 var total = (int)(seconds * sampleRate);
 var left = new float[total];
 var right = new float[total];
+float[]? inputLeft = null;
+float[]? inputRight = null;
+if (inputPath is not null)
+{
+    var input = WavFile.Read(inputPath);
+    if (input.SampleRate != sampleRate)
+        Console.WriteLine($"Input : note: {inputPath} is {input.SampleRate} Hz, fed as-is at {sampleRate} Hz");
+
+    inputLeft = new float[total];
+    inputRight = new float[total];
+    var frames = Math.Min(total, input.Length);
+    Array.Copy(input.Left, inputLeft, frames);
+    Array.Copy(input.Right, inputRight, frames);
+    Console.WriteLine($"Input : {inputPath}  ({input.Length} frames, {(frames < total ? "zero-padded" : "truncated")} to {total})");
+}
+
+var gateFrames = gates.Select(g => (long)(g * sampleRate)).OrderBy(g => g).ToList();
+var nextGate = 0;
 for (var pos = 0; pos < total; pos += block)
-    engine.Process(left, right, pos, Math.Min(block, total - pos));
+{
+    var count = Math.Min(block, total - pos);
+    while (nextGate < gateFrames.Count && gateFrames[nextGate] < pos + count)
+    {
+        engine.Gate();
+        nextGate++;
+    }
+
+    if (inputLeft is not null && inputRight is not null)
+        engine.Process(inputLeft, inputRight, left, right, pos, count);
+    else
+        engine.Process(left, right, pos, count);
+}
+
+if (gates.Count > 0)
+    Console.WriteLine($"Gates : {string.Join(", ", gates.Select(g => g.ToString("0.00", CultureInfo.InvariantCulture) + " s"))}");
 
 Analyze(left, right, sampleRate);
 
@@ -129,6 +181,7 @@ static void DescribePatch(ParameterBank bank)
     }
 
     Console.WriteLine($"  Mix: crossfade {bank.Get(ParamId.MixCrossfade).ToString("0.00", inv)}, balance {bank.Get(ParamId.MixSumBalance).ToString("+0.00;-0.00;0.00", inv)}, ring {bank.Get(ParamId.MixRingLevel).ToString("0.00", inv)}");
+    Console.WriteLine($"  Sampler: key {bank.GetInt(ParamId.SamplerSelect)}, pitch {bank.GetInt(ParamId.SamplerPitch):+0;-0;0} st, dir {bank.Get(ParamId.SamplerDir).ToString("0.00", inv)}, loop {bank.Get(ParamId.SamplerLoopStart).ToString("0.00", inv)}..{bank.Get(ParamId.SamplerLoopEnd).ToString("0.00", inv)} xf {bank.Get(ParamId.SamplerLoopCrossfade).ToString("0", inv)} ms, amp {bank.Get(ParamId.SamplerAmp).ToString("0.00", inv)}, master {bank.Get(ParamId.SamplerMaster).ToString("0.00", inv)}, samp<>in {bank.Get(ParamId.SamplerInputMix).ToString("0.00", inv)}, AM {bank.Get(ParamId.SamplerAmDepth).ToString("0.00", inv)}, retrigger {(bank.GetBool(ParamId.SamplerRetrigger) ? "on" : "off")}");
 }
 
 static void DumpParameters()

@@ -1,24 +1,29 @@
 using Noumenon.Dsp.Filters;
 using Noumenon.Dsp.Mix;
+using Noumenon.Dsp.Modulation;
 using Noumenon.Dsp.Oscillators;
 using Noumenon.Dsp.Output;
+using Noumenon.Dsp.Sampler;
 using Noumenon.Dsp.Sections;
 using Noumenon.Dsp.Shared;
 using Noumenon.Engine.Parameters;
+using Noumenon.Engine.Samples;
 
 namespace Noumenon.Engine;
 
 /// <summary>
-/// The instrument: owns the live <see cref="Parameters"/> and the DSP graph, and renders it. Every
-/// <see cref="ControlInterval"/> samples a control tick reads the parameter bank and hands each
-/// block its new targets (pitch from the knobs and the P routing, gains, cutoffs, mix); the blocks
-/// glide to them per sample. The tick grid runs independently of the host's block boundaries, so a
-/// render is bit-identical whatever block size it is cut into. <see cref="Process(float[],float[],int,int)"/>
-/// is the audio-thread hot path: no allocation, no locks, no strings.
+/// The instrument: owns the live <see cref="Parameters"/>, the <see cref="Samples"/> map and the DSP
+/// graph, and renders it. Every <see cref="ControlInterval"/> samples a control tick reads the
+/// parameter bank and hands each block its new targets (pitch from the knobs and the P routing,
+/// gains, cutoffs, mix, the sampler's speed and loop); the blocks glide to them per sample. The tick
+/// grid runs independently of the host's block boundaries, so a render is bit-identical whatever
+/// block size it is cut into. The <c>Process</c> overloads are the audio-thread hot path: no
+/// allocation, no locks, no strings.
 ///
-/// Phase 1 graph: section A and B → combiner (sum / ring-mod crossfade) → output stage. The
-/// sampler, the effect chain, the pitch layer and the lanes are added by the following phases; until
-/// the pitch layer exists <see cref="P1"/>/<see cref="P2"/> are plain inputs in semitones.
+/// Graph so far: section A and B → combiner (sum / ring-mod crossfade) → × the AM route → + the
+/// sampler (or the live input through Samp↔In) → output stage. The effect chain (Phase 3), the pitch
+/// layer and the lanes (Phase 4) come next; until then <see cref="P1"/>/<see cref="P2"/> are plain
+/// inputs in semitones and <see cref="Gate"/> is the MIDI gate the hosts will drive.
 /// </summary>
 public sealed class NoumenonEngine
 {
@@ -26,19 +31,27 @@ public sealed class NoumenonEngine
     public const double DefaultSampleRate = 48000.0;
 
     private const ulong SectionSeedStride = 0x2545F4914F6CDD1DUL;
+    private const float AmSmoothSeconds = 0.02f;
 
     private readonly Section[] sections = [new(), new()];
     private readonly Combiner combiner = new();
+    private readonly SamplePlayer sampler = new();
+    private readonly EnvelopeFollower follower = new();
+    private readonly Smoother amDepth = new();
     private readonly OutputStage output = new();
 
+    private float[] silence = new float[512];
     private double sampleRate = DefaultSampleRate;
     private bool prepared;
     private int samplesUntilTick;
+    private int gatePending;
     private ulong seed = 1;
 
     public NoumenonEngine() => Prepare(DefaultSampleRate, 512);
 
     public ParameterBank Parameters { get; } = new();
+
+    public SampleMap Samples { get; } = new();
 
     public double SampleRate => sampleRate;
 
@@ -51,10 +64,22 @@ public sealed class NoumenonEngine
     /// <summary>P2 pitch input in semitones.</summary>
     public float P2 { get; set; }
 
+    /// <summary>The envelope follower's current level (the sampler / input signal), a modulation source.</summary>
+    public float EnvelopeFollowerValue => follower.Value;
+
+    /// <summary>The sampler's playhead in frames of the selected sample, for the waveform display.</summary>
+    public double SamplePosition => sampler.Position;
+
     /// <summary>
-    /// Sizes everything for a sample rate. <paramref name="maxBlockSize"/> is accepted for the
-    /// host adapters' sake; the Phase 1 graph keeps no per-block scratch. Ends with a
-    /// <see cref="Reset()"/>, so a prepared engine starts from a clean, deterministic state.
+    /// A MIDI gate (note-on). Safe from any thread; the next control tick consumes it — the sampler
+    /// retriggers when Sample Retrigger is on, and Phase 4 adds lane restart and the gated envelope.
+    /// </summary>
+    public void Gate() => Interlocked.Exchange(ref gatePending, 1);
+
+    /// <summary>
+    /// Sizes everything for a sample rate and the largest block a host will send (the input-silence
+    /// buffer for the generator overloads; larger blocks still work, at the cost of one allocation).
+    /// Ends with a <see cref="Reset()"/>, so a prepared engine starts from a clean, deterministic state.
     /// </summary>
     public void Prepare(double sampleRate, int maxBlockSize)
     {
@@ -62,7 +87,11 @@ public sealed class NoumenonEngine
         sections[0].Prepare(this.sampleRate);
         sections[1].Prepare(this.sampleRate);
         combiner.Prepare(this.sampleRate);
+        sampler.Prepare(this.sampleRate);
+        follower.Prepare(this.sampleRate);
+        amDepth.SetTime(this.sampleRate, AmSmoothSeconds);
         output.Prepare(this.sampleRate);
+        EnsureSilence(maxBlockSize);
         prepared = true;
         Reset();
     }
@@ -70,9 +99,9 @@ public sealed class NoumenonEngine
     public void Reset() => Reset(seed);
 
     /// <summary>
-    /// Applies the current parameters without gliding, rewinds every oscillator and reseeds the
-    /// noise from <paramref name="seed"/>: two engines reset with the same parameters and seed
-    /// render the same samples.
+    /// Applies the current parameters without gliding, rewinds every oscillator and the sampler and
+    /// reseeds the noise from <paramref name="seed"/>: two engines reset with the same parameters,
+    /// samples and seed render the same samples.
     /// </summary>
     public void Reset(ulong seed)
     {
@@ -82,14 +111,30 @@ public sealed class NoumenonEngine
             sections[s].Reset(seed + (ulong)(s + 1) * SectionSeedStride);
 
         combiner.Reset();
+        sampler.Reset();
+        follower.Clear();
+        amDepth.Snap();
         output.Reset();
         samplesUntilTick = 0;
     }
 
+    /// <summary>Renders <paramref name="count"/> stereo frames with no live input (the instrument identity).</summary>
     public void Process(float[] left, float[] right, int count) => Process(left, right, 0, count);
 
-    /// <summary>Renders <paramref name="count"/> stereo samples into the buffers starting at <paramref name="offset"/> (overwriting them).</summary>
+    /// <summary>Renders into the buffers starting at <paramref name="offset"/> (overwriting them), with no live input.</summary>
     public void Process(float[] left, float[] right, int offset, int count)
+    {
+        EnsureSilence(count);
+        Render(silence, silence, 0, left, right, offset, count);
+    }
+
+    /// <summary>Renders with a live input (the FX identity); the input may be the same buffers as the output.</summary>
+    public void Process(float[] inputLeft, float[] inputRight, float[] left, float[] right, int count) => Render(inputLeft, inputRight, 0, left, right, 0, count);
+
+    /// <summary>Renders with a live input, reading and writing from <paramref name="offset"/>.</summary>
+    public void Process(float[] inputLeft, float[] inputRight, float[] left, float[] right, int offset, int count) => Render(inputLeft, inputRight, offset, left, right, offset, count);
+
+    private void Render(float[] inputLeft, float[] inputRight, int inputOffset, float[] left, float[] right, int offset, int count)
     {
         var end = offset + count;
         if (!prepared)
@@ -100,6 +145,7 @@ public sealed class NoumenonEngine
         }
 
         var i = offset;
+        var j = inputOffset;
         while (i < end)
         {
             if (samplesUntilTick <= 0)
@@ -112,11 +158,17 @@ public sealed class NoumenonEngine
             for (var n = 0; n < run; n++)
             {
                 var mono = combiner.Process(sections[0].Process(), sections[1].Process());
-                float l = mono, r = mono;
+                sampler.Process(inputLeft[j], inputRight[j], out var sampleLeft, out var sampleRight, out var dry);
+                var envelope = follower.Process(dry);
+                var depth = amDepth.Next();
+                var am = 1f - depth + depth * (envelope > 1f ? 1f : envelope);
+                var l = mono * am + sampleLeft;
+                var r = mono * am + sampleRight;
                 output.Process(ref l, ref r);
                 left[i] = l;
                 right[i] = r;
                 i++;
+                j++;
             }
 
             samplesUntilTick -= run;
@@ -131,6 +183,7 @@ public sealed class NoumenonEngine
         var masterCutoff = bank.Get(ParamId.MasterFilterCutoff);
         var p1 = P1;
         var p2 = P2;
+        var gate = Interlocked.Exchange(ref gatePending, 0) != 0;
 
         for (var s = 0; s < ParameterTable.SectionCount; s++)
         {
@@ -168,8 +221,32 @@ public sealed class NoumenonEngine
         combiner.SetBalance(bank.Get(ParamId.MixSumBalance));
         combiner.SetRingLevel(bank.Get(ParamId.MixRingLevel));
 
+        // Sampler: the selected key's slot (a reference the loader publishes), pitch = knob + fine
+        // + the chosen P fader + the slot's root-note correction, Dir as signed speed.
+        var sample = Samples.Get(bank.GetInt(ParamId.SamplerSelect));
+        sampler.SetSample(sample?.Data);
+        var modSource = bank.GetInt(ParamId.SamplerModSource);
+        var pitchMod = modSource == 1 ? p1 : modSource == 2 ? p2 : 0f;
+        var rootCorrection = sample is null ? 0f : Tuning.MiddleC - sample.RootNote;
+        sampler.SetSpeed(bank.Get(ParamId.SamplerPitch) + bank.Get(ParamId.SamplerFine) / 100f + pitchMod + rootCorrection, bank.Get(ParamId.SamplerDir));
+        sampler.SetLoop(bank.Get(ParamId.SamplerLoopStart), bank.Get(ParamId.SamplerLoopEnd), bank.Get(ParamId.SamplerLoopCrossfade));
+        sampler.SetGain(bank.Get(ParamId.SamplerAmp) * bank.Get(ParamId.SamplerMaster) * (sample?.Gain ?? 1f));
+        sampler.SetInputMix(bank.Get(ParamId.SamplerInputMix));
+        sampler.SetStereo(bank.GetBool(ParamId.SamplerStereo));
+        if (gate && bank.GetBool(ParamId.SamplerRetrigger))
+            sampler.Retrigger();
+
+        follower.SetTimes(bank.Get(ParamId.EnvFollowerAttack), bank.Get(ParamId.EnvFollowerRelease));
+        amDepth.Target = bank.Get(ParamId.SamplerAmDepth);
+
         output.SetVolumeDb(bank.Get(ParamId.OutputVolume));
         output.SetWidth(bank.Get(ParamId.OutputWidth));
         output.SetMute(bank.GetBool(ParamId.Mute));
+    }
+
+    private void EnsureSilence(int count)
+    {
+        if (silence.Length < count)
+            silence = new float[count];
     }
 }

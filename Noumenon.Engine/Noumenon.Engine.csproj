@@ -1,11 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- The graph: parameter model, engine facade, presets. Host-agnostic like the DSP layer. -->
+    <!-- The graph: parameter model, engine facade, sample map, presets. Host-agnostic like the DSP layer. -->
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- NAudio.Core is the cross-platform part of NAudio: WAV/AIFF readers and the sample-provider
+         conversions, no Windows APIs. The Windows hosts add Media Foundation decoding on top. -->
+    <PackageReference Include="NAudio.Core" Version="2.2.1" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Noumenon.Dsp\Noumenon.Dsp.csproj" />
