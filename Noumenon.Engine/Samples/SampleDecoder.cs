@@ -63,7 +63,6 @@ public static class SampleDecoder
         throw new NotSupportedException($"No decoder for '{extension}' files ({path}).");
     }
 
-    /// <summary>Reads a whole NAudio stream into a <see cref="SampleData"/>; hosts use it to wrap their own readers.</summary>
     public static SampleData ReadAll(WaveStream stream, string name)
     {
         var format = stream.WaveFormat;

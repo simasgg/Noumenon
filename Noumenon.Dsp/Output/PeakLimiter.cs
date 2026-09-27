@@ -6,10 +6,11 @@ namespace Noumenon.Dsp.Output;
 /// <summary>
 /// A stereo-linked safety limiter with instantaneous attack and an exponential release: the gain
 /// is computed from a peak envelope that is never below the current sample, so the output can never
-/// exceed <see cref="Ceiling"/>. It is a guard against resonance and ring-mod overs, not a mastering
-/// tool; the Fabrications two-band limiter (Phase 3) does the musical work in front of it.
+/// exceed <see cref="Ceiling"/>. It is the last thing in the chain — a guard against resonance,
+/// ring-mod and post-gain overs, not a mastering tool; the Fabrications two-band limiter in the
+/// post section does the musical work in front of it.
 /// </summary>
-internal sealed class PeakLimiter
+public sealed class PeakLimiter
 {
     private float envelope;
     private float releaseCoeff;

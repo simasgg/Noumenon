@@ -2,31 +2,27 @@ using System.Globalization;
 
 namespace Noumenon.Engine.Parameters;
 
-/// <summary>How a parameter's value behaves and how hosts should present it.</summary>
+/// <summary>
+/// How a parameter's value behaves and how hosts should present it. A Trigger is momentary:
+/// writing 1 fires the action once and the engine writes it back to 0.
+/// </summary>
 public enum ParamKind
 {
-    /// <summary>A real value between <see cref="ParamInfo.Min"/> and <see cref="ParamInfo.Max"/>.</summary>
     Continuous,
-
-    /// <summary>A whole number between Min and Max (a map key, a MIDI note, a seed).</summary>
     Integer,
-
-    /// <summary>0 = off, 1 = on.</summary>
     Toggle,
-
-    /// <summary>One entry of <see cref="ParamInfo.Choices"/>; the value is the entry's index.</summary>
     Choice,
-
-    /// <summary>Momentary: writing 1 fires the action once and the engine writes it back to 0.</summary>
     Trigger,
 }
 
-/// <summary>How a <see cref="ParamKind.Continuous"/> value maps onto the host's normalized 0-1 range.</summary>
+/// <summary>
+/// How a <see cref="ParamKind.Continuous"/> value maps onto the host's normalized 0-1 range;
+/// Logarithmic means equal ratios per step (frequencies, times, gain multipliers) and needs
+/// Min &gt; 0.
+/// </summary>
 public enum ParamScale
 {
     Linear,
-
-    /// <summary>Equal ratios per step (frequencies, times, gain multipliers). Needs Min &gt; 0.</summary>
     Logarithmic,
 }
 
@@ -162,7 +158,6 @@ public sealed class ParamInfo
         return Clamp(Min + n * (Max - Min));
     }
 
-    /// <summary>The value as the panel and hosts display it, e.g. "12.0 kHz", "+7 st", "On", "Saw".</summary>
     public string Format(float value)
     {
         var v = Clamp(value);

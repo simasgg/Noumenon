@@ -30,6 +30,5 @@ public static class DspHelper
     /// <summary>One-pole coefficient that reaches ~63 % of a step in <paramref name="seconds"/>; 1 (instant) for a non-positive time.</summary>
     public static float SmoothingCoeff(double sampleRate, float seconds) => seconds <= 0f ? 1f : 1f - MathF.Exp(-1f / (seconds * (float)sampleRate));
 
-    /// <summary>One-pole low-pass coefficient (<c>1 − e^(−2π·fc/SR)</c>) for a cutoff in Hz.</summary>
     public static float OnePoleCoeff(double sampleRate, float cutoffHz) => 1f - MathF.Exp(-TwoPi * cutoffHz / (float)sampleRate);
 }

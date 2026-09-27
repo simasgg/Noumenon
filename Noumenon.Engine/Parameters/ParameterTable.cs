@@ -1,3 +1,5 @@
+using Noumenon.Dsp.Effects;
+
 namespace Noumenon.Engine.Parameters;
 
 public enum SectionId
@@ -99,9 +101,15 @@ public static class ParameterTable
     public static readonly IReadOnlyList<string> SamplerModes = ["Classic", "Granular", "Stretch"];
     public static readonly IReadOnlyList<string> ModSources = ["None", "P1", "P2", "Matrix"];
     public static readonly IReadOnlyList<string> ChordSelectSources = ["None", "P1", "P2"];
+    /// <summary>Choice names for the distortion curve; the order is the <c>Noumenon.Dsp.Effects.DistortionCurve</c> enum.</summary>
     public static readonly IReadOnlyList<string> DistortionCurves = ["Tanh", "Fold", "Bit"];
-    public static readonly IReadOnlyList<string> ReverbRooms = ["Room", "Chamber", "Hall", "Cathedral", "Plate", "Cloud", "Endless"];
+
+    /// <summary>The reverb rooms, straight from <c>Noumenon.Dsp.Reverb.ReverbRooms</c>.</summary>
+    public static readonly IReadOnlyList<string> ReverbRooms = Dsp.Reverb.ReverbRooms.Names;
+
     public static readonly IReadOnlyList<string> ReverbOrders = ["Pre", "Post"];
+
+    /// <summary>Choice names for the post limiter's release; the order is the <c>Noumenon.Dsp.Effects.LimiterSpeed</c> enum.</summary>
     public static readonly IReadOnlyList<string> LimiterSpeeds = ["Fast", "Medium", "Slow"];
     public static readonly IReadOnlyList<string> SpeedSteps = ["0.5x", "1x", "2x", "4x"];
     public static readonly IReadOnlyList<string> RandomizeScopes = ["All", "Oscillators", "Sampler", "Effects", "Lanes"];
@@ -130,7 +138,6 @@ public static class ParameterTable
 
     public static ParamInfo Get(ParamId id) => All[(int)id];
 
-    /// <summary>Looks a row up by its enum name (<c>OscA1Level</c>) or display name (<c>Osc A1 Level</c>), case-insensitively.</summary>
     public static ParamInfo? Find(string name)
     {
         foreach (var info in All)
@@ -142,7 +149,6 @@ public static class ParameterTable
         return null;
     }
 
-    /// <summary>A fresh array of every default, indexed by <see cref="ParamId"/>.</summary>
     public static float[] CreateDefaults()
     {
         var values = new float[All.Count];
@@ -261,11 +267,11 @@ public static class ParameterTable
         rows.Add(Linear(ParamId.SpinFine, ParamGroup.Spin, "Spin Fine", "Spin Fin", -1f, 1f, 0f, Units.Milliseconds, ParamFlags.Lane));
         rows.Add(Linear(ParamId.SpinFeedback, ParamGroup.Spin, "Spin Feedback", "Spin FB", 0f, 0.95f, 0.35f, Units.None, ParamFlags.Lane));
         rows.Add(Toggle(ParamId.SpinLink, ParamGroup.Spin, "Spin Link", "Spin Lnk", false));
-        rows.Add(Linear(ParamId.SpinMix, ParamGroup.Spin, "Spin Mix", "Spin Mix", 0f, 1f, 0.3f, Units.None, ParamFlags.Addition));
+        rows.Add(Linear(ParamId.SpinMix, ParamGroup.Spin, "Spin Mix", "Spin Mix", 0f, 1f, 1f, Units.None, ParamFlags.Addition));   // 1 = MF: the signal passes through the delay
 
         rows.Add(Toggle(ParamId.ResochordOn, ParamGroup.Resochord, "Resochord On", "Rc On", true));
-        rows.Add(Integer(ParamId.ResochordChord, ParamGroup.Resochord, "Resochord Chord", "Rc Chord", 0, 63, 0, Units.None));
-        rows.Add(Linear(ParamId.ResochordFeedback, ParamGroup.Resochord, "Resochord Feedback", "Rc FB", 0f, 0.99f, 0.5f, Units.None));
+        rows.Add(Choice(ParamId.ResochordChord, ParamGroup.Resochord, "Resochord Chord", "Rc Chord", ChordTable.Names, 0));
+        rows.Add(Linear(ParamId.ResochordFeedback, ParamGroup.Resochord, "Resochord Feedback", "Rc FB", 0f, 0.99f, 0.7f, Units.None));
         rows.Add(Linear(ParamId.ResochordFeedbackFader, ParamGroup.Resochord, "Resochord Feedback Fader", "Rc FBFdr", 0f, 0.99f, 0f, Units.None, ParamFlags.Lane));
         rows.Add(Integer(ParamId.ResochordPitch, ParamGroup.Resochord, "Resochord Pitch", "Rc Pitch", -24, 24, 0, Units.Semitones));
         rows.Add(Linear(ParamId.ResochordFine, ParamGroup.Resochord, "Resochord Fine", "Rc Fine", -100f, 100f, 0f, Units.Cents));

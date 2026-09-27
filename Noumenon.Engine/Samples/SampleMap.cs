@@ -20,7 +20,6 @@ public sealed class SampleMap
     /// <summary>The slot at a key, or null; safe to call from the audio thread.</summary>
     public SampleSlot? Get(int key) => (uint)key < KeyCount ? Volatile.Read(ref slots[key]) : null;
 
-    /// <summary>Decodes a file and publishes it under <paramref name="key"/>.</summary>
     public SampleSlot Load(int key, string path, float gain = 1f, int rootNote = Tuning.MiddleC)
     {
         var data = SampleDecoder.Decode(path);
@@ -28,7 +27,6 @@ public sealed class SampleMap
         return Set(key, data, gain, rootNote, path);
     }
 
-    /// <summary>Publishes already-decoded data (generated, or decoded by the caller) under <paramref name="key"/>.</summary>
     public SampleSlot Set(int key, SampleData data, float gain = 1f, int rootNote = Tuning.MiddleC, string? path = null)
     {
         ValidateKey(key);
@@ -38,7 +36,6 @@ public sealed class SampleMap
         return slot;
     }
 
-    /// <summary>Replaces a slot's settings, keeping its audio; returns null if the key is empty.</summary>
     public SampleSlot? Adjust(int key, float? gain = null, int? rootNote = null)
     {
         ValidateKey(key);

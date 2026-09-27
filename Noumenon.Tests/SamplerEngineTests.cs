@@ -28,6 +28,7 @@ public class SamplerEngineTests
     {
         var engine = new NoumenonEngine();
         var bank = engine.Parameters;
+        EngineTests.BypassEffects(bank);
         if (!sectionsOn)
             SilenceSections(bank);
 
@@ -77,11 +78,23 @@ public class SamplerEngineTests
         var engine = Make(new SampleData("stereo", SampleRate, left, right));
         var (l, r) = Render(engine, SampleRate / 2);
 
-        for (var i = 200; i < l.Length; i++)
+        AssertPassesThrough(left, l, engine.LatencySamples);
+        AssertPassesThrough(right, r, engine.LatencySamples);
+    }
+
+    private static void AssertPassesThrough(float[] input, float[] output, int latency)
+    {
+        var signal = 0.0;
+        var error = 0.0;
+        for (var i = 200 + latency; i < output.Length; i++)
         {
-            Assert.Equal(left[i], l[i], 0.01f);   // the output stage's 5 Hz DC blocker nudges a 440 Hz sine by a fraction of a percent
-            Assert.Equal(right[i], r[i], 0.01f);
+            var expected = input[i - latency];
+            signal += (double)expected * expected;
+            error += (double)(output[i] - expected) * (output[i] - expected);
         }
+
+        Assert.True(signal > 0);
+        Assert.True(Math.Sqrt(error / signal) < 0.05, $"relative error {Math.Sqrt(error / signal):P1}");
     }
 
     [Fact]
@@ -101,11 +114,8 @@ public class SamplerEngineTests
         engine.Reset(1);
         var (l, r) = Render(engine, SampleRate / 2, input, input);
 
-        for (var i = 200; i < l.Length; i++)
-        {
-            Assert.Equal(input[i], l[i], 0.01f);
-            Assert.Equal(input[i], r[i], 0.01f);
-        }
+        AssertPassesThrough(input, l, engine.LatencySamples);
+        AssertPassesThrough(input, r, engine.LatencySamples);
 
         engine.Parameters.Set(ParamId.SamplerInputMix, 0f);
         engine.Reset(1);

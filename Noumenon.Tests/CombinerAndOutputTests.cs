@@ -67,15 +67,16 @@ public class CombinerAndOutputTests
     }
 
     [Fact]
-    public void Limiter_Never_Lets_A_Sample_Over_The_Ceiling()
+    public void Safety_Limiter_Never_Lets_A_Sample_Over_The_Ceiling()
     {
-        var o = MakeOutput();
+        var limiter = new PeakLimiter();
+        limiter.Prepare(SampleRate, 0.2f);
         var peak = 0f;
         for (var i = 0; i < SampleRate; i++)
         {
             var l = 3f * MathF.Sin(i * 0.05f);
             var r = -2.5f * MathF.Sin(i * 0.031f);
-            o.Process(ref l, ref r);
+            limiter.Process(ref l, ref r);
             peak = MathF.Max(peak, MathF.Max(MathF.Abs(l), MathF.Abs(r)));
         }
 

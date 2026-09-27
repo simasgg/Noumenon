@@ -15,6 +15,7 @@ using Noumenon.TestHarness;
 //     --input <path>       feed a WAV as the live input (the FX identity); shorter files are zero-padded
 //     --gate <seconds>     fire a MIDI gate at this time (repeatable)
 //     --set <Name=Value>   override one parameter (enum name or display name; repeatable)
+//     --at <seconds> <Name=Value>  change a parameter at that time during the render (repeatable)
 //     --out <path>         output file (default ./noumenon_out.wav, 24-bit stereo)
 //     --dump-params        print the parameter table and exit
 var seconds = 10.0;
@@ -29,6 +30,7 @@ string? inputPath = null;
 var gates = new List<double>();
 var outputPath = Path.GetFullPath("noumenon_out.wav");
 var overrides = new List<(string Name, float Value)>();
+var timedSets = new List<(double Seconds, string Name, float Value)>();
 var dumpParams = false;
 
 for (var i = 0; i < args.Length; i++)
@@ -67,6 +69,18 @@ for (var i = 0; i < args.Length; i++)
         }
 
         overrides.Add((parts[0], float.Parse(parts[1], CultureInfo.InvariantCulture)));
+    }
+    else if (Is(a, "--at") && i + 2 < args.Length)
+    {
+        var at = double.Parse(args[++i], CultureInfo.InvariantCulture);
+        var parts = args[++i].Split('=', 2);
+        if (parts.Length != 2)
+        {
+            Console.WriteLine($"--at expects <seconds> Name=Value, got '{args[i]}'.");
+            return 1;
+        }
+
+        timedSets.Add((at, parts[0], float.Parse(parts[1], CultureInfo.InvariantCulture)));
     }
     else if (Is(a, "--dump-params"))
         dumpParams = true;
@@ -107,6 +121,21 @@ foreach (var (name, value) in overrides)
     bank.Set(info.Id, value);
 }
 
+var timed = new List<(long Frame, ParamId Id, float Value)>();
+foreach (var (at, name, value) in timedSets)
+{
+    var info = ParameterTable.Find(name);
+    if (info is null)
+    {
+        Console.WriteLine($"Unknown parameter '{name}'. Use --dump-params to list them.");
+        return 1;
+    }
+
+    timed.Add(((long)(at * sampleRate), info.Id, value));
+}
+
+timed.Sort((x, y) => x.Frame.CompareTo(y.Frame));
+
 engine.P1 = p1;
 engine.P2 = p2;
 engine.Prepare(sampleRate, block);
@@ -136,6 +165,7 @@ if (inputPath is not null)
 
 var gateFrames = gates.Select(g => (long)(g * sampleRate)).OrderBy(g => g).ToList();
 var nextGate = 0;
+var nextTimed = 0;
 for (var pos = 0; pos < total; pos += block)
 {
     var count = Math.Min(block, total - pos);
@@ -143,6 +173,12 @@ for (var pos = 0; pos < total; pos += block)
     {
         engine.Gate();
         nextGate++;
+    }
+
+    while (nextTimed < timed.Count && timed[nextTimed].Frame < pos + count)
+    {
+        bank.Set(timed[nextTimed].Id, timed[nextTimed].Value);
+        nextTimed++;
     }
 
     if (inputLeft is not null && inputRight is not null)
@@ -153,6 +189,11 @@ for (var pos = 0; pos < total; pos += block)
 
 if (gates.Count > 0)
     Console.WriteLine($"Gates : {string.Join(", ", gates.Select(g => g.ToString("0.00", CultureInfo.InvariantCulture) + " s"))}");
+
+if (timedSets.Count > 0)
+    Console.WriteLine($"Timed : {string.Join(", ", timedSets.Select(t => $"{t.Seconds.ToString("0.00", CultureInfo.InvariantCulture)} s {t.Name}={t.Value.ToString(CultureInfo.InvariantCulture)}"))}");
+
+Console.WriteLine($"Engine: {engine.Oversampling}x ({engine.SampleRate} Hz internal), latency {engine.LatencySamples} samples");
 
 Analyze(left, right, sampleRate);
 
@@ -182,7 +223,11 @@ static void DescribePatch(ParameterBank bank)
 
     Console.WriteLine($"  Mix: crossfade {bank.Get(ParamId.MixCrossfade).ToString("0.00", inv)}, balance {bank.Get(ParamId.MixSumBalance).ToString("+0.00;-0.00;0.00", inv)}, ring {bank.Get(ParamId.MixRingLevel).ToString("0.00", inv)}");
     Console.WriteLine($"  Sampler: key {bank.GetInt(ParamId.SamplerSelect)}, pitch {bank.GetInt(ParamId.SamplerPitch):+0;-0;0} st, dir {bank.Get(ParamId.SamplerDir).ToString("0.00", inv)}, loop {bank.Get(ParamId.SamplerLoopStart).ToString("0.00", inv)}..{bank.Get(ParamId.SamplerLoopEnd).ToString("0.00", inv)} xf {bank.Get(ParamId.SamplerLoopCrossfade).ToString("0", inv)} ms, amp {bank.Get(ParamId.SamplerAmp).ToString("0.00", inv)}, master {bank.Get(ParamId.SamplerMaster).ToString("0.00", inv)}, samp<>in {bank.Get(ParamId.SamplerInputMix).ToString("0.00", inv)}, AM {bank.Get(ParamId.SamplerAmDepth).ToString("0.00", inv)}, retrigger {(bank.GetBool(ParamId.SamplerRetrigger) ? "on" : "off")}");
+    Console.WriteLine($"  Chain: filter {OnOff(bank, ParamId.MasterFilterOn)} {ParameterTable.Get(ParamId.MasterFilterCutoff).Format(bank.Get(ParamId.MasterFilterCutoff))} morph {bank.Get(ParamId.MasterFilterMorph).ToString("0.00", inv)} | dist {OnOff(bank, ParamId.DistortionOn)} mix {bank.Get(ParamId.DistortionMix).ToString("0.00", inv)} {ParameterTable.DistortionCurves[bank.GetInt(ParamId.DistortionCurve)]} | eq {bank.Get(ParamId.EqLow).ToString("+0.0;-0.0", inv)}/{bank.Get(ParamId.EqHigh).ToString("+0.0;-0.0", inv)} dB | spin {OnOff(bank, ParamId.SpinOn)} {bank.Get(ParamId.SpinTime1).ToString("0", inv)}/{bank.Get(ParamId.SpinTime2).ToString("0", inv)} ms fb {bank.Get(ParamId.SpinFeedback).ToString("0.00", inv)} mix {bank.Get(ParamId.SpinMix).ToString("0.00", inv)}");
+    Console.WriteLine($"  Chain: resochord {OnOff(bank, ParamId.ResochordOn)} {ParameterTable.Get(ParamId.ResochordChord).Format(bank.Get(ParamId.ResochordChord))} fb {bank.Get(ParamId.ResochordFeedback).ToString("0.00", inv)}+{bank.Get(ParamId.ResochordFeedbackFader).ToString("0.00", inv)} mix {bank.Get(ParamId.ResochordMix).ToString("0.00", inv)} | reverb {OnOff(bank, ParamId.ReverbOn)} {ParameterTable.ReverbRooms[bank.GetInt(ParamId.ReverbRoom)]} size {bank.Get(ParamId.ReverbSize).ToString("0.00", inv)} mix {bank.Get(ParamId.ReverbMix).ToString("0.00", inv)} freeze {OnOff(bank, ParamId.ReverbFreeze)} order {ParameterTable.ReverbOrders[bank.GetInt(ParamId.ReverbOrder)]} | post limiter {OnOff(bank, ParamId.PostLimiterOn)} gain {bank.Get(ParamId.PostLimiterGain).ToString("0", inv)} dB");
 }
+
+static string OnOff(ParameterBank bank, ParamId id) => bank.GetBool(id) ? "on" : "off";
 
 static void DumpParameters()
 {

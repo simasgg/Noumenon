@@ -49,7 +49,6 @@ public sealed class Oscillator
         increment = incrementTarget;
     }
 
-    /// <summary>Rewinds the phase, snaps the pitch glide and reseeds the noise so the next render is deterministic.</summary>
     public void Reset(ulong seed)
     {
         phase = 0.0;
@@ -66,10 +65,8 @@ public sealed class Oscillator
         incrementTarget = normalized < 0.0 ? 0.0 : normalized > MaxNormalizedFrequency ? MaxNormalizedFrequency : normalized;
     }
 
-    /// <summary>0..1: pulse width, or the triangle's peak position. Clamped away from the ends so a ramp always has a few samples to live in.</summary>
     public void SetShape(float value) => shape = DspHelper.Clamp(value, MinShape, 1f);
 
-    /// <summary>Low-pass cutoff of <see cref="Waveform.NoiseLp"/>, or the step rate of <see cref="Waveform.NoiseSh"/>.</summary>
     public void SetNoiseCutoff(float hz)
     {
         noiseCutoffHz = DspHelper.Clamp(hz, 1f, (float)(MaxNormalizedFrequency * sampleRate));

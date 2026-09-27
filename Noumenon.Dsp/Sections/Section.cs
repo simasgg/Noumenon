@@ -73,7 +73,6 @@ public sealed class Section
         lastCutoff = -1f;
     }
 
-    /// <summary>Snaps every glide to its target, rewinds the oscillators and reseeds each slot's noise from <paramref name="seed"/>.</summary>
     public void Reset(ulong seed)
     {
         for (var i = 0; i < SlotCount; i++)

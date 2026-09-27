@@ -36,14 +36,12 @@ public sealed class ParameterBank
             Volatile.Write(ref values[i], all[i].Default);
     }
 
-    /// <summary>Snapshot every value into <paramref name="destination"/> (sized <see cref="Count"/>).</summary>
     public void CopyTo(float[] destination)
     {
         for (var i = 0; i < values.Length; i++)
             destination[i] = Volatile.Read(ref values[i]);
     }
 
-    /// <summary>Load every value from <paramref name="source"/> (sized <see cref="Count"/>), clamped.</summary>
     public void CopyFrom(ReadOnlySpan<float> source)
     {
         var all = ParameterTable.All;

@@ -35,6 +35,14 @@ internal sealed class StateVariableFilter
         a3 = g * a2;
     }
 
+    public void CopyCoefficientsFrom(StateVariableFilter other)
+    {
+        k = other.k;
+        a1 = other.a1;
+        a2 = other.a2;
+        a3 = other.a3;
+    }
+
     public void Clear()
     {
         ic1eq = 0f;
@@ -44,17 +52,26 @@ internal sealed class StateVariableFilter
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public float Process(float v0)
     {
+        Process(v0, out var low, out var band, out var high);
+
+        return Type switch
+        {
+            FilterType.LowPass => low,
+            FilterType.BandPass => band,
+            _ => high,
+        };
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Process(float v0, out float low, out float band, out float high)
+    {
         var v3 = v0 - ic2eq;
         var v1 = a1 * ic1eq + a2 * v3;
         var v2 = ic2eq + a2 * ic1eq + a3 * v3;
         ic1eq = DspHelper.Undenormalize(2f * v1 - ic1eq);
         ic2eq = DspHelper.Undenormalize(2f * v2 - ic2eq);
-
-        return Type switch
-        {
-            FilterType.LowPass => v2,
-            FilterType.BandPass => v1,
-            _ => v0 - k * v1 - v2,
-        };
+        low = v2;
+        band = v1;
+        high = v0 - k * v1 - v2;
     }
 }

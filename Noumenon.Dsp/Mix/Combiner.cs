@@ -29,10 +29,8 @@ public sealed class Combiner
         ring.Snap(RingMakeup);
     }
 
-    /// <summary>0 = the summed path only, 1 = the ring-mod path only.</summary>
     public void SetCrossfade(float value) => crossfade.Target = DspHelper.Clamp01(value);
 
-    /// <summary>−1 = only A in the summed path, 0 = both in full, +1 = only B.</summary>
     public void SetBalance(float balance)
     {
         var b = DspHelper.Clamp(balance, -1f, 1f);

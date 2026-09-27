@@ -7,7 +7,7 @@ namespace Noumenon.Dsp.Shared;
 /// non-square widths and the ring-mod path squares signals, so the output stage takes the offset
 /// out before the width matrix and the limiter see it.
 /// </summary>
-internal sealed class DcBlocker
+public sealed class DcBlocker
 {
     private float x1, y1;
     private float r = 0.999f;

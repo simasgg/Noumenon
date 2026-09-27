@@ -41,9 +41,21 @@ public class EngineTests
         return Math.Sqrt(sum / Math.Max(1, x.Length - start));
     }
 
-    /// <summary>Only slot A2 (a sine at semitone 0), nothing from section B, summed path only.</summary>
+    /// <summary>Turns every effect block off so a test sees the sources alone (the distortion's constant latency stays).</summary>
+    public static void BypassEffects(ParameterBank bank)
+    {
+        bank.Set(ParamId.MasterFilterOn, false);
+        bank.Set(ParamId.DistortionOn, false);
+        bank.Set(ParamId.SpinOn, false);
+        bank.Set(ParamId.ResochordOn, false);
+        bank.Set(ParamId.ReverbOn, false);
+        bank.Set(ParamId.PostFilterOn, false);
+        bank.Set(ParamId.PostLimiterOn, false);
+    }
+
     private static void SoloA2Sine(ParameterBank bank)
     {
+        BypassEffects(bank);
         for (var s = 0; s < ParameterTable.SectionCount; s++)
         {
             for (var slot = 0; slot < ParameterTable.SlotsPerSection; slot++)
@@ -151,7 +163,7 @@ public class EngineTests
         Assert.True(Rms(l, 0) > 0.02, "the init patch should make sound immediately");
         Assert.True(Rms(l, SampleRate * 2) > 0.02, "the init patch should keep sounding");
         Assert.True(l.Max(MathF.Abs) <= 0.981f, "the safety limiter caps the output");
-        Assert.Equal(l, r);   // Phase 1 is mono until Spin and the reverb arrive
+        Assert.NotEqual(l, r);   // Spin's unequal delay times make the init patch stereo
     }
 
     [Fact]
@@ -210,6 +222,7 @@ public class EngineTests
     {
         var engine = Make();
         var bank = engine.Parameters;
+        BypassEffects(bank);   // the master filter itself stays off: only its cutoff value feeds the Slave
         bank.Set(ParamId.MasterFilterCutoff, 100f);
         engine.Reset(1);
         var (openL, _) = Render(engine, SampleRate);

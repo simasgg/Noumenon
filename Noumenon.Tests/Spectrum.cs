@@ -7,7 +7,6 @@ namespace Noumenon.Tests;
 /// </summary>
 internal static class Spectrum
 {
-    /// <summary>Magnitude in dB for bins 0..n/2 of the first <paramref name="n"/> samples (n a power of two).</summary>
     public static double[] MagnitudeDb(float[] signal, int n)
     {
         if ((n & (n - 1)) != 0)
@@ -55,6 +54,31 @@ internal static class Spectrum
         }
 
         return floor - fundamental;
+    }
+
+    /// <summary>
+    /// The frequency of the loudest bin between <paramref name="minHz"/> and <paramref name="maxHz"/>,
+    /// refined by fitting a parabola through the three bins around it (sub-bin accuracy for any
+    /// smooth peak).
+    /// </summary>
+    public static double PeakFrequency(double[] magsDb, double binHz, double minHz, double maxHz)
+    {
+        var lo = Math.Max(1, (int)Math.Ceiling(minHz / binHz));
+        var hi = Math.Min(magsDb.Length - 2, (int)Math.Floor(maxHz / binHz));
+        var best = lo;
+        for (var k = lo; k <= hi; k++)
+        {
+            if (magsDb[k] > magsDb[best])
+                best = k;
+        }
+
+        var a = magsDb[best - 1];
+        var b = magsDb[best];
+        var c = magsDb[best + 1];
+        var denominator = a - 2 * b + c;
+        var offset = denominator == 0 ? 0 : 0.5 * (a - c) / denominator;
+
+        return (best + offset) * binHz;
     }
 
     private static void Fft(double[] re, double[] im)

@@ -2,13 +2,13 @@ using System.Runtime.CompilerServices;
 
 namespace Noumenon.Dsp.Sampler;
 
+/// <summary>
+/// Four-point, third-order Hermite (Catmull-Rom) reads at fractional frame positions: exact at
+/// integer positions and for straight lines, smooth between samples; indices past either end
+/// clamp to the edge frame. Positions must be non-negative.
+/// </summary>
 internal static class Interpolation
 {
-    /// <summary>
-    /// Four-point, third-order Hermite (Catmull-Rom) read at a fractional frame position. Exact at
-    /// integer positions and for straight lines, smooth between samples; indices past either end
-    /// clamp to the edge frame. The position must be non-negative.
-    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float Hermite(float[] data, double position)
     {

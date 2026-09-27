@@ -66,7 +66,6 @@ public sealed class SamplePlayer
 
     public int LoopEndFrame => head.LoopEnd;
 
-    /// <summary>Selects the sample to play; a different instance than the current one is faded in over the old.</summary>
     public void SetSample(SampleData? data)
     {
         if (data is not null && data.Length < MinLoopFrames)
@@ -78,7 +77,6 @@ public sealed class SamplePlayer
         Switch(data);
     }
 
-    /// <summary>Restarts the current sample from the loop's start (or its end when playing backwards), click-free.</summary>
     public void Retrigger()
     {
         if (head.Data is not null)
@@ -100,10 +98,8 @@ public sealed class SamplePlayer
     /// <summary>Pitch offset in semitones (knob + fine + P modulation + root-note correction) and the signed Dir speed.</summary>
     public void SetSpeed(float semitones, float direction) => speed.Target = MathF.Pow(2f, semitones / 12f) * direction;
 
-    /// <summary>The product of the Amp fader, the Master knob and the slot gain.</summary>
     public void SetGain(float gain) => amp.Target = gain < 0f ? 0f : gain;
 
-    /// <summary>0 = the sample, 1 = the live input; equal-power in between.</summary>
     public void SetInputMix(float mix)
     {
         var angle = DspHelper.Clamp01(mix) * (MathF.PI * 0.5f);
@@ -111,7 +107,6 @@ public sealed class SamplePlayer
         inputSide.Target = MathF.Sin(angle);
     }
 
-    /// <summary>Off sums the two channels to mono, the original MF behaviour.</summary>
     public void SetStereo(bool on) => stereo.Target = on ? 1f : 0f;
 
     public void Prepare(double sampleRate)
@@ -130,7 +125,6 @@ public sealed class SamplePlayer
         ApplyLoop(tail);
     }
 
-    /// <summary>Snaps every glide, drops the fading head and rewinds the playhead to the loop start.</summary>
     public void Reset()
     {
         speed.Snap();
@@ -145,10 +139,8 @@ public sealed class SamplePlayer
     }
 
     /// <summary>
-    /// One frame: the sample (both heads) crossfaded against the live input, folded to mono when
-    /// Stereo is off, then scaled by the gain. <paramref name="dryMono"/> is the mono signal before
-    /// the gain — what the envelope follower and the AM route listen to, so Amp can be at zero while
-    /// the sample still shapes the oscillators.
+    /// <paramref name="dryMono"/> is the mono signal before the gain — what the envelope follower
+    /// and the AM route listen to, so Amp can be at zero while the sample still shapes the oscillators.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Process(float inputLeft, float inputRight, out float left, out float right, out float dryMono)
