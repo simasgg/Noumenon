@@ -1,0 +1,55 @@
+# EditorConfig for Noumenon — https://editorconfig.org
+
+root = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+tab_width = 4
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+max_line_length = 250
+
+#### .NET naming conventions ####
+# Matches CLAUDE.md: locals, parameters, and private fields are camelCase with NO underscore
+# prefix; const/static "globals" and public members are PascalCase.
+
+# Naming styles
+dotnet_naming_style.camel_case.capitalization = camel_case
+dotnet_naming_style.pascal_case.capitalization = pascal_case
+
+# Symbol groups
+dotnet_naming_symbols.constant_fields.applicable_kinds = field
+dotnet_naming_symbols.constant_fields.required_modifiers = const
+
+dotnet_naming_symbols.static_fields.applicable_kinds = field
+dotnet_naming_symbols.static_fields.required_modifiers = static
+
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+
+# Rules — listed most-specific first (first match wins): const and static fields keep
+# PascalCase; every other private field is camelCase (no underscore prefix).
+dotnet_naming_rule.constants_are_pascal_case.symbols = constant_fields
+dotnet_naming_rule.constants_are_pascal_case.style = pascal_case
+dotnet_naming_rule.constants_are_pascal_case.severity = suggestion
+
+dotnet_naming_rule.static_fields_are_pascal_case.symbols = static_fields
+dotnet_naming_rule.static_fields_are_pascal_case.style = pascal_case
+dotnet_naming_rule.static_fields_are_pascal_case.severity = suggestion
+
+dotnet_naming_rule.private_fields_are_camel_case.symbols = private_fields
+dotnet_naming_rule.private_fields_are_camel_case.style = camel_case
+dotnet_naming_rule.private_fields_are_camel_case.severity = suggestion
+
+[*.{csproj,slnx,props,targets}]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+insert_final_newline = true
+
+[*.{md,json,ps1}]
+end_of_line = lf
+insert_final_newline = true

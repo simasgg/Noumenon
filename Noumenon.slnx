@@ -1,0 +1,11 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="Noumenon.Dsp/Noumenon.Dsp.csproj" />
+  <Project Path="Noumenon.Engine/Noumenon.Engine.csproj" />
+  <Project Path="Noumenon.Ui/Noumenon.Ui.csproj" />
+  <Project Path="Noumenon.Standalone/Noumenon.Standalone.csproj" />
+  <Project Path="Noumenon.TestHarness/Noumenon.TestHarness.csproj" />
+  <Project Path="Noumenon.Tests/Noumenon.Tests.csproj" />
+</Solution>
