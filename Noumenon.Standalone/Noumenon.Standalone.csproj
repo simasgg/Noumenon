@@ -8,6 +8,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
+    <!-- LibraryImport (MMCSS, AttachConsole) generates marshalling stubs that need unsafe code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- The audio callback shares the process with the GC: the workstation concurrent collector plus
+         the sustained-low-latency mode Program sets keeps collections short and off the hot path. -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
 
     <!-- Product metadata; the single place the displayed version is set. -->
     <Version>0.1.0</Version>
@@ -15,6 +24,14 @@
     <Product>Noumenon</Product>
     <Description>Noumenon - a generative ambient loop instrument.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Output and capture devices (WASAPI shared/exclusive, endpoint enumeration), ASIO drivers,
+         MIDI input ports, and Media Foundation decoding for MP3/AAC/WMA/FLAC samples. -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <PackageReference Include="NAudio.Asio" Version="2.2.1" />
+    <PackageReference Include="NAudio.Midi" Version="2.2.1" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Noumenon.Engine\Noumenon.Engine.csproj" />
