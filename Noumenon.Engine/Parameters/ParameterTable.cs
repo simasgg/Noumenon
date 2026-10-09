@@ -109,6 +109,9 @@ public static class ParameterTable
 
     public static readonly IReadOnlyList<string> ReverbOrders = ["Pre", "Post"];
 
+    /// <summary>The Resochord chord list: the <see cref="ChordTable"/> presets followed by the eight user chord memories.</summary>
+    public static readonly IReadOnlyList<string> ResochordChords = [..ChordTable.Names, "User 1", "User 2", "User 3", "User 4", "User 5", "User 6", "User 7", "User 8"];
+
     /// <summary>Choice names for the post limiter's release; the order is the <c>Noumenon.Dsp.Effects.LimiterSpeed</c> enum.</summary>
     public static readonly IReadOnlyList<string> LimiterSpeeds = ["Fast", "Medium", "Slow"];
     public static readonly IReadOnlyList<string> SpeedSteps = ["0.5x", "1x", "2x", "4x"];
@@ -270,7 +273,7 @@ public static class ParameterTable
         rows.Add(Linear(ParamId.SpinMix, ParamGroup.Spin, "Spin Mix", "Spin Mix", 0f, 1f, 1f, Units.None, ParamFlags.Addition));   // 1 = MF: the signal passes through the delay
 
         rows.Add(Toggle(ParamId.ResochordOn, ParamGroup.Resochord, "Resochord On", "Rc On", true));
-        rows.Add(Choice(ParamId.ResochordChord, ParamGroup.Resochord, "Resochord Chord", "Rc Chord", ChordTable.Names, 0));
+        rows.Add(Choice(ParamId.ResochordChord, ParamGroup.Resochord, "Resochord Chord", "Rc Chord", ResochordChords, 0));
         rows.Add(Linear(ParamId.ResochordFeedback, ParamGroup.Resochord, "Resochord Feedback", "Rc FB", 0f, 0.99f, 0.7f, Units.None));
         rows.Add(Linear(ParamId.ResochordFeedbackFader, ParamGroup.Resochord, "Resochord Feedback Fader", "Rc FBFdr", 0f, 0.99f, 0f, Units.None, ParamFlags.Lane));
         rows.Add(Integer(ParamId.ResochordPitch, ParamGroup.Resochord, "Resochord Pitch", "Rc Pitch", -24, 24, 0, Units.Semitones));

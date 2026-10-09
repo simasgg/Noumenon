@@ -42,7 +42,7 @@ public class EngineTests
     }
 
     /// <summary>Turns every effect block off so a test sees the sources alone (the distortion's constant latency stays).</summary>
-    public static void BypassEffects(ParameterBank bank)
+    internal static void BypassEffects(ParameterBank bank)
     {
         bank.Set(ParamId.MasterFilterOn, false);
         bank.Set(ParamId.DistortionOn, false);
@@ -190,7 +190,7 @@ public class EngineTests
         engine.Reset(1);
         var (baseL, _) = Render(engine, SampleRate * 2);
 
-        engine.P1 = 12f;
+        engine.Parameters.Set(ParamId.P1Value, 12f);
         engine.Reset(1);
         var (upL, _) = Render(engine, SampleRate * 2);
 
@@ -210,7 +210,7 @@ public class EngineTests
         var engine = Make();
         SoloA2Sine(engine.Parameters);
         engine.Parameters.Set(ParamId.SectionAP1FineRange, true);
-        engine.P1 = 48f;   // 48 cents, not 48 semitones
+        engine.Parameters.Set(ParamId.P1Value, 48f);   // 48 cents, not 48 semitones
         engine.Reset(1);
         var (l, _) = Render(engine, SampleRate * 2);
 

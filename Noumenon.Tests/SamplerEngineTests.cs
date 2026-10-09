@@ -39,6 +39,8 @@ public class SamplerEngineTests
         bank.Set(ParamId.SamplerAmp, amp);
         bank.Set(ParamId.SamplerMaster, 1f);
         bank.Set(ParamId.SamplerLoopCrossfade, 0f);
+        bank.Set(ParamId.P1Glide, 0f);
+        bank.Set(ParamId.P2Glide, 0f);
         engine.Prepare(SampleRate, 512);
         engine.Reset(1);
 
@@ -155,13 +157,13 @@ public class SamplerEngineTests
         Assert.InRange(plain.SamplePosition, SampleRate / 2 - 1, SampleRate / 2 + 1);
 
         var up = Make(sample);
-        up.P2 = 12f;
+        up.Parameters.Set(ParamId.P2Value, 12f);
         up.Reset(1);
         Render(up, SampleRate / 2);
         Assert.InRange(up.SamplePosition, SampleRate - 1, SampleRate + 1);
 
         var unrouted = Make(sample);
-        unrouted.P2 = 12f;
+        unrouted.Parameters.Set(ParamId.P2Value, 12f);
         unrouted.Parameters.Set(ParamId.SamplerModSource, 0);
         unrouted.Reset(1);
         Render(unrouted, SampleRate / 2);

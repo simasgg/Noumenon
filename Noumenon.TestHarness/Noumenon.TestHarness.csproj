@@ -9,6 +9,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Standard MIDI file reading for the MIDI-file option; the port classes in the same package are not used. -->
+    <PackageReference Include="NAudio.Midi" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Noumenon.Engine\Noumenon.Engine.csproj" />
   </ItemGroup>
 
