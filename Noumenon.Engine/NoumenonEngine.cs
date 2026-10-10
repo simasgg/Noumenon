@@ -145,6 +145,9 @@ public sealed class NoumenonEngine
 
     public float GateEnvelopeValue => gateEnvelope.Value;
 
+    /// <summary>Where the Pause fade is: 1 running, 0 silent, in between while fading either way.</summary>
+    public float PauseLevel => output.PauseLevel;
+
     public double SamplePosition => sampler.Position;
 
     public bool IsMorphing => morph.IsActive;
@@ -669,6 +672,8 @@ public sealed class NoumenonEngine
         output.SetVolumeDb(R(ParamId.OutputVolume));
         output.SetWidth(R(ParamId.OutputWidth));
         output.SetMute(RB(ParamId.Mute));
+        output.SetPause(RB(ParamId.Pause));
+        output.SetPauseFade(R(ParamId.PauseFade));
 
         post.Filter.SetEnabled(RB(ParamId.PostFilterOn));
         post.Filter.SetMix(R(ParamId.PostFilterMix));

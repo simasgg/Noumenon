@@ -13,20 +13,20 @@ using Noumenon.Standalone.Developer;
 using Noumenon.Standalone.Dialogs;
 using Noumenon.Standalone.Input;
 using Noumenon.Standalone.Presets;
+using Noumenon.Ui;
 
 namespace Noumenon.Standalone;
 
 /// <summary>
 /// The instrument's main window and the hub of the standalone: it owns the engine, the audio and
-/// MIDI hosts, the preset library and the developer panel, and polls them from a UI timer — the
-/// engine never calls back into the UI. The toolbar carries what a player reaches for (presets,
-/// Randomize with its scope, amount and seed, Restart, Mute, the internal transport, Record,
-/// Party mode); the menus hold the rest (devices, bounce, samples, scales, morph, lane limit).
-/// The Randomize trigger and the Engine Rate change are the two things the audio thread cannot do
-/// itself, so the timer runs the randomizer and restarts the stream when they are requested.
-/// Phase 6 keeps all of this and swaps the panel for the editor.
+/// MIDI hosts and the preset library, hosts the shared <see cref="NoumenonEditor"/> as its client
+/// area and serves it as <see cref="IEditorHost"/> (presets, files, status). A UI timer polls the
+/// engine for the two things the audio thread cannot do itself — running the randomizer when it
+/// is requested and restarting the stream when Engine Rate changes — and keeps the transport,
+/// recording and party-mode state current. The Phase 5 developer panel lives on in its own window
+/// behind the View menu. The menus hold what a plugin host would own: devices, bounce, record.
 /// </summary>
-internal sealed class MainForm : Form
+internal sealed class MainForm : Form, IEditorHost
 {
     private const int PollIntervalMs = 33;
     private const int StatusEveryPolls = 6;
@@ -34,9 +34,9 @@ internal sealed class MainForm : Form
     private const int SmokeCloseMs = 2500;
     private const float MeterDecay = 0.85f;
 
-    private static readonly float[] Amounts = [0.1f, 0.25f, 0.5f, 0.75f, 1f];
     private static readonly int[] LaneLimits = [30, 60, 120, 300];
     private static readonly int[] PartyIntervals = [10, 30, 60, 120];
+    private static readonly float[] EditorScales = [1f, 1.5f, 2f];
 
     private readonly LaunchOptions options;
     private readonly HostSettings settings = HostSettings.Load();
@@ -45,23 +45,21 @@ internal sealed class MainForm : Form
     private readonly MidiHost midi;
     private readonly KeyboardMidi keyboard;
     private readonly PresetLibrary library = new();
-    private readonly DeveloperPanel panel;
+    private readonly NoumenonEditor editor;
+    private readonly Panel editorHost = new() { Dock = DockStyle.Fill, BackColor = EditorTheme.Panel, AutoScroll = true };
     private readonly Xoshiro128 seeds = new(((ulong)Environment.TickCount64 * 0x9E3779B97F4A7C15UL) ^ (ulong)DateTime.UtcNow.Ticks);
     private readonly System.Windows.Forms.Timer timer = new() { Interval = PollIntervalMs };
+    private DeveloperWindow? developerWindow;
 
     private readonly MenuStrip menu = new();
     private readonly ToolStrip toolbar = new() { GripStyle = ToolStripGripStyle.Hidden };
     private readonly StatusStrip statusBar = new();
-    private readonly ToolStripComboBox presetBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = 230 };
-    private readonly ToolStripComboBox scopeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = 100 };
-    private readonly ToolStripComboBox amountBox = new() { DropDownStyle = ComboBoxStyle.DropDownList, AutoSize = false, Width = 64 };
-    private readonly ToolStripLabel seedLabel = new("seed –");
-    private readonly ToolStripButton muteButton = new("Mute") { CheckOnClick = true };
     private readonly ToolStripButton playButton = new("Play") { CheckOnClick = true };
     private readonly ToolStripTextBox tempoBox = new() { AutoSize = false, Width = 48, TextBoxTextAlign = HorizontalAlignment.Right };
     private readonly ToolStripButton recordButton = new("● Rec");
     private readonly ToolStripLabel recordLabel = new("");
     private readonly ToolStripButton partyButton = new("Party") { CheckOnClick = true };
+    private readonly ToolStripLabel seedLabel = new("");
     private readonly ToolStripStatusLabel statusLabel = new() { Spring = true, TextAlign = ContentAlignment.MiddleLeft };
     private readonly ToolStripStatusLabel loadLabel = new();
     private readonly ToolStripStatusLabel inputLabel = new();
@@ -77,25 +75,27 @@ internal sealed class MainForm : Form
     private readonly ToolStripMenuItem laneLimitMenu = new("Lane &Length Limit");
     private readonly ToolStripMenuItem partyIntervalMenu = new("Party &Interval");
     private readonly ToolStripMenuItem recordFormatMenu = new("Record &Format");
+    private readonly ToolStripMenuItem scaleMenu = new("Panel &Size");
 
     private string? currentPresetPath;
     private string currentPresetName = "Init";
+    private IReadOnlyList<string> presetNames = [];
     private int polls;
-    private bool syncingToolbar;
     private float meterL;
     private float meterR;
     private long shownMidiMessages;
     private int partyTicksLeft;
     private string? notice;
     private long noticeUntil;
+    private string shortStatus = "";
 
     public MainForm(LaunchOptions options)
     {
         this.options = options;
         Text = "Noumenon";
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(1040, 720);
-        MinimumSize = new Size(860, 480);
+        FormBorderStyle = FormBorderStyle.FixedSingle;
+        MaximizeBox = false;
         KeyPreview = true;
 
         if (Math.Abs(settings.LaneMaxSeconds - LaneSet.DefaultMaxSeconds) > 0.01f)
@@ -105,24 +105,81 @@ internal sealed class MainForm : Form
         host = new AudioHost(engine, settings);
         midi = new MidiHost(engine.Midi);
         keyboard = new KeyboardMidi(engine.Midi);
-        panel = new DeveloperPanel(engine, midi, keyboard) { Dock = DockStyle.Fill };
+        RefreshPresetNames();
+        editor = new NoumenonEditor(engine, this) { Location = new Point(0, 0) };
+        editor.PanelScale = EditorScales.Contains(settings.EditorScale) ? settings.EditorScale : 1f;
+        editorHost.Controls.Add(editor);
+        editor.PanelScaleChanged += OnEditorScaleChanged;
 
         BuildMenu();
         BuildToolbar();
         BuildStatusBar();
-        Controls.Add(panel);
+        Controls.Add(editorHost);
         Controls.Add(toolbar);
         Controls.Add(statusBar);
         Controls.Add(menu);
         MainMenuStrip = menu;
-        panel.BringToFront();
+        editorHost.BringToFront();
         timer.Tick += OnTick;
+    }
+
+    // ---- IEditorHost ----
+
+    public IReadOnlyList<string> PresetNames => presetNames;
+
+    public int CurrentPresetIndex => library.IndexOf(currentPresetPath);
+
+    public string CurrentPresetName => currentPresetName;
+
+    public string StatusText => notice is not null && Environment.TickCount64 < noticeUntil ? notice : shortStatus;
+
+    public bool KeyboardNotesActive => settings.KeyboardMidi;
+
+    public void LoadPreset(int index)
+    {
+        if (index >= 0 && index < library.All.Count)
+            LoadPreset(library.All[index].Path);
+    }
+
+    public void SavePreset() => SavePreset(forceDialog: false);
+
+    public void LoadSample(int key)
+    {
+        using var dialog = new OpenFileDialog { Filter = MediaFoundationDecoding.FileFilter, Title = $"Load a sample into key {key}" };
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+            LoadSampleFile(key, dialog.FileName);
+    }
+
+    public void LoadSampleFile(int key, string path)
+    {
+        Notice($"Loading {Path.GetFileName(path)}…");
+        Task.Run(() => engine.Samples.Load(key, path)).ContinueWith(task =>
+        {
+            if (IsDisposed)
+                return;
+
+            if (task.IsFaulted)
+            {
+                Notice("Sample not loaded: " + (task.Exception?.GetBaseException().Message ?? "unknown error"));
+                return;
+            }
+
+            engine.Parameters.Set(ParamId.SamplerSelect, key);
+            Notice($"Loaded {task.Result.Name} on key {key}");
+        }, TaskScheduler.FromCurrentSynchronizationContext());
+    }
+
+    // ---- Window life cycle ----
+
+    protected override void OnLoad(EventArgs e)
+    {
+        base.OnLoad(e);
+        FitToEditor();
     }
 
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        FillPresetBox();
         StartAudio();
         if (!midi.Open(settings.MidiDevice) && midi.Error is not null)
             Notice(midi.Error);
@@ -140,14 +197,22 @@ internal sealed class MainForm : Form
         if (!options.Smoke)
             return;
 
-        // Smoke: build and poll every page once, so a page that cannot be constructed fails the launch.
-        for (var page = 0; page < panel.PageCount; page++)
+        for (var page = 0; page < NoumenonEditor.PageCount; page++)
         {
-            panel.ShowPage(page);
-            panel.Poll();
+            editor.Page = page;
+            editor.Refresh();
+            if (options.ScreenshotFolder is { } folder)
+                SaveScreenshot(folder, page);
         }
 
-        panel.ShowPage(0);
+        editor.Page = 0;
+        if (options.ScreenshotFolder is { } reportFolder)
+        {
+            var report = editor.SelfTest();
+            File.WriteAllText(Path.Combine(reportFolder, "selftest.txt"), report);
+            if (!report.StartsWith("0 failures", StringComparison.Ordinal))
+                Environment.ExitCode = 1;
+        }
         var closer = new System.Windows.Forms.Timer { Interval = SmokeCloseMs };
         closer.Tick += (_, _) =>
         {
@@ -165,7 +230,9 @@ internal sealed class MainForm : Form
         host.StopRecording();
         host.Dispose();
         midi.Dispose();
+        settings.EditorScale = editor.PanelScale;
         settings.Save();
+        developerWindow?.Dispose();
         base.OnFormClosing(e);
     }
 
@@ -210,6 +277,45 @@ internal sealed class MainForm : Form
         return control is not (TextBoxBase or NumericUpDown or ComboBox { DropDownStyle: not ComboBoxStyle.DropDownList });
     }
 
+    private void SaveScreenshot(string folder, int page)
+    {
+        try
+        {
+            Directory.CreateDirectory(folder);
+            using var bitmap = editor.RenderToBitmap();
+            bitmap.Save(Path.Combine(folder, $"editor-page{page + 1}.png"), System.Drawing.Imaging.ImageFormat.Png);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Runtime.InteropServices.ExternalException)
+        {
+            Notice("Screenshot failed: " + ex.Message);
+        }
+    }
+
+    private void FitToEditor()
+    {
+        menu.PerformLayout();
+        toolbar.PerformLayout();
+        statusBar.PerformLayout();
+        var area = Screen.FromControl(this).WorkingArea;
+        var chrome = menu.Height + toolbar.Height + statusBar.Height;
+        var width = Math.Min(Math.Max(editor.Width, 760), area.Width - 24);
+        var height = Math.Min(chrome + editor.Height, area.Height - 60);
+        ClientSize = new Size(width, height);   // a panel larger than the screen scrolls inside its host
+        editorHost.AutoScrollPosition = Point.Empty;
+        editor.Location = new Point(Math.Max(0, (editorHost.ClientSize.Width - editor.Width) / 2), 0);
+    }
+
+    // Both the View menu and the editor's own size buttons end here: the editor has already resized itself.
+    private void OnEditorScaleChanged()
+    {
+        var scale = editor.PanelScale;
+        settings.EditorScale = scale;
+        foreach (ToolStripMenuItem item in scaleMenu.DropDownItems)
+            item.Checked = item.Tag is float f && Math.Abs(f - scale) < 0.01f;
+
+        FitToEditor();
+    }
+
     // ---- Building the chrome ----
 
     private void BuildMenu()
@@ -220,7 +326,7 @@ internal sealed class MainForm : Form
         file.DropDownItems.Add(Item("&Save Preset", Keys.Control | Keys.S, () => SavePreset(forceDialog: false)));
         file.DropDownItems.Add(Item("Save Preset &As…", Keys.Control | Keys.Shift | Keys.S, () => SavePreset(forceDialog: true)));
         file.DropDownItems.Add(new ToolStripSeparator());
-        file.DropDownItems.Add(Item("Load Sa&mple into Key…", Keys.Control | Keys.L, LoadSample));
+        file.DropDownItems.Add(Item("Load Sa&mple into Key…", Keys.Control | Keys.L, () => LoadSample(engine.Parameters.GetInt(ParamId.SamplerSelect))));
         file.DropDownItems.Add(Item("Load Scala Sca&le (.scl)…", Keys.None, LoadScale));
         file.DropDownItems.Add(Item("Reset User Scale to 12-TET", Keys.None, () =>
         {
@@ -328,15 +434,32 @@ internal sealed class MainForm : Form
         presets.DropDownItems.Add(Item("Re&scan Folders", Keys.None, () =>
         {
             library.Rescan();
-            FillPresetBox();
+            RefreshPresetNames();
         }));
         presets.DropDownItems.Add(Item("Open &User Preset Folder", Keys.None, () => OpenFolder(library.UserFolder)));
 
+        var view = new ToolStripMenuItem("&View");
+        foreach (var scale in EditorScales)
+        {
+            var chosen = scale;
+            var item = new ToolStripMenuItem("×" + scale.ToString("0.#", CultureInfo.InvariantCulture)) { Tag = scale, Checked = Math.Abs(editor.PanelScale - scale) < 0.01f };
+            item.Click += (_, _) => editor.PanelScale = chosen;
+            scaleMenu.DropDownItems.Add(item);
+        }
+
+        view.DropDownItems.Add(scaleMenu);
+        view.DropDownItems.Add(new ToolStripSeparator());
+        view.DropDownItems.Add(Item("&MAIN Page", Keys.Control | Keys.D1, () => editor.Page = 0));
+        view.DropDownItems.Add(Item("&POST Page", Keys.Control | Keys.D2, () => editor.Page = 1));
+        view.DropDownItems.Add(Item("M&OD Page", Keys.Control | Keys.D3, () => editor.Page = 2));
+        view.DropDownItems.Add(new ToolStripSeparator());
+        view.DropDownItems.Add(Item("&Developer Panel…", Keys.Control | Keys.D, ShowDeveloperPanel));
+
         var help = new ToolStripMenuItem("&Help");
         help.DropDownItems.Add(Item("&Keys…", Keys.F1, ShowKeys));
-        help.DropDownItems.Add(Item("&About", Keys.None, () => MessageBox.Show(this, $"Noumenon {Application.ProductVersion}\nA generative ambient loop instrument.\n\nPhase 5 standalone host with the developer panel.\nSettings: {HostSettings.FilePath}\nFactory presets: {library.FactoryFolder ?? "(not found)"}\nUser presets: {library.UserFolder}", "About Noumenon")));
+        help.DropDownItems.Add(Item("&About", Keys.None, () => MessageBox.Show(this, $"Noumenon {Application.ProductVersion}\nA generative ambient loop instrument.\n\nSettings: {HostSettings.FilePath}\nFactory presets: {library.FactoryFolder ?? "(not found)"}\nUser presets: {library.UserFolder}", "About Noumenon")));
 
-        menu.Items.AddRange([file, audio, midiMenu, transport, presets, help]);
+        menu.Items.AddRange([file, audio, midiMenu, transport, presets, view, help]);
     }
 
     private void FillMidiMenu()
@@ -374,28 +497,6 @@ internal sealed class MainForm : Form
 
     private void BuildToolbar()
     {
-        presetBox.SelectedIndexChanged += (_, _) =>
-        {
-            if (!syncingToolbar && presetBox.SelectedIndex >= 0 && presetBox.SelectedIndex < library.All.Count)
-                LoadPreset(library.All[presetBox.SelectedIndex].Path);
-        };
-        foreach (var scope in ParameterTable.RandomizeScopes)
-            scopeBox.Items.Add(scope);
-
-        scopeBox.SelectedIndexChanged += (_, _) =>
-        {
-            if (!syncingToolbar && scopeBox.SelectedIndex >= 0)
-                engine.Parameters.Set(ParamId.RandomizeScope, scopeBox.SelectedIndex);
-        };
-        foreach (var amount in Amounts)
-            amountBox.Items.Add((amount * 100).ToString("0", CultureInfo.InvariantCulture) + " %");
-
-        amountBox.SelectedIndexChanged += (_, _) =>
-        {
-            if (!syncingToolbar && amountBox.SelectedIndex >= 0)
-                engine.Parameters.Set(ParamId.RandomizeAmount, Amounts[amountBox.SelectedIndex]);
-        };
-        muteButton.Click += (_, _) => engine.Parameters.Set(ParamId.Mute, muteButton.Checked);
         playButton.Click += (_, _) => SetPlaying(playButton.Checked);
         tempoBox.Text = settings.Tempo.ToString("0.#", CultureInfo.InvariantCulture);
         tempoBox.KeyDown += (_, e) =>
@@ -405,26 +506,12 @@ internal sealed class MainForm : Form
 
             ApplyTempo(tempoBox.Text);
             e.SuppressKeyPress = true;
-            panel.Focus();
+            editor.Focus();
         };
         tempoBox.Leave += (_, _) => ApplyTempo(tempoBox.Text);
         recordButton.Click += (_, _) => ToggleRecording();
         partyButton.Click += (_, _) => SetParty(partyButton.Checked);
 
-        toolbar.Items.Add(new ToolStripLabel("Preset"));
-        toolbar.Items.Add(presetBox);
-        toolbar.Items.Add(Button("◀", "Previous preset (Ctrl+Left)", () => StepPreset(-1)));
-        toolbar.Items.Add(Button("▶", "Next preset (Ctrl+Right)", () => StepPreset(1)));
-        toolbar.Items.Add(new ToolStripSeparator());
-        toolbar.Items.Add(Button("Randomize", "Randomize with the scope and amount (F5)", Randomize));
-        toolbar.Items.Add(scopeBox);
-        toolbar.Items.Add(amountBox);
-        toolbar.Items.Add(seedLabel);
-        toolbar.Items.Add(new ToolStripSeparator());
-        toolbar.Items.Add(Button("Restart", "Restart every lane (F6)", () => engine.Clock.RequestRestart()));
-        muteButton.ToolTipText = "Mute the output (F7)";
-        toolbar.Items.Add(muteButton);
-        toolbar.Items.Add(new ToolStripSeparator());
         playButton.ToolTipText = "Internal transport: play state for Restart On Host Play and Host Sync (F8)";
         toolbar.Items.Add(playButton);
         toolbar.Items.Add(tempoBox);
@@ -436,6 +523,12 @@ internal sealed class MainForm : Form
         toolbar.Items.Add(new ToolStripSeparator());
         partyButton.ToolTipText = "Party mode: randomize every interval (F10)";
         toolbar.Items.Add(partyButton);
+        toolbar.Items.Add(new ToolStripSeparator());
+        toolbar.Items.Add(Button("Audio…", "Audio & MIDI settings (Ctrl+,)", ShowSettings));
+        toolbar.Items.Add(Button("Bounce…", "Render the snapshot to a WAV (Ctrl+B)", Bounce));
+        toolbar.Items.Add(Button("Dev panel", "Every parameter as a plain control (Ctrl+D)", ShowDeveloperPanel));
+        toolbar.Items.Add(new ToolStripSeparator());
+        toolbar.Items.Add(seedLabel);
     }
 
     private void BuildStatusBar()
@@ -460,13 +553,18 @@ internal sealed class MainForm : Form
         return button;
     }
 
+    private void ShowDeveloperPanel()
+    {
+        developerWindow ??= new DeveloperWindow(engine, midi, keyboard) { Location = new Point(Left + 40, Top + 40) };
+        developerWindow.Show(this);
+        developerWindow.Activate();
+    }
+
     // ---- The poll ----
 
     private void OnTick(object? sender, EventArgs e)
     {
         polls++;
-        panel.Poll();
-
         host.TakePeaks(out var l, out var r);
         meterL = MathF.Max(l, meterL * MeterDecay);
         meterR = MathF.Max(r, meterR * MeterDecay);
@@ -478,7 +576,7 @@ internal sealed class MainForm : Form
 
         if (host.NeedsRestartForEngineRate)
         {
-            Notice($"Engine rate changed to {ParameterTable.EngineRates[engine.Parameters.GetInt(ParamId.EngineRate)]}: restarting the stream.");
+            Notice($"Engine rate {ParameterTable.EngineRates[engine.Parameters.GetInt(ParamId.EngineRate)]}: restarting the stream.");
             RestartAudio();
         }
 
@@ -504,63 +602,31 @@ internal sealed class MainForm : Form
 
     private void SyncToolbar()
     {
-        syncingToolbar = true;
-        try
-        {
-            var bank = engine.Parameters;
-            var scope = Math.Clamp(bank.GetInt(ParamId.RandomizeScope), 0, scopeBox.Items.Count - 1);
-            if (scopeBox.SelectedIndex != scope)
-                scopeBox.SelectedIndex = scope;
+        var playing = engine.Clock.HostPlaying;
+        if (playButton.Checked != playing)
+            playButton.Checked = playing;
 
-            var amount = bank.Get(ParamId.RandomizeAmount);
-            var amountIndex = 0;
-            for (var i = 1; i < Amounts.Length; i++)
-            {
-                if (MathF.Abs(Amounts[i] - amount) < MathF.Abs(Amounts[amountIndex] - amount))
-                    amountIndex = i;
-            }
+        if (playItem.Checked != playing)
+            playItem.Checked = playing;
 
-            if (amountBox.SelectedIndex != amountIndex)
-                amountBox.SelectedIndex = amountIndex;
+        var recorder = host.Recorder;
+        var recording = recorder is not null;
+        if (recordButton.Checked != recording)
+            recordButton.Checked = recording;
 
-            var muted = bank.GetBool(ParamId.Mute);
-            if (muteButton.Checked != muted)
-                muteButton.Checked = muted;
+        if (recordItem.Checked != recording)
+            recordItem.Checked = recording;
 
-            var playing = engine.Clock.HostPlaying;
-            if (playButton.Checked != playing)
-                playButton.Checked = playing;
-
-            if (playItem.Checked != playing)
-                playItem.Checked = playing;
-
-            var recorder = host.Recorder;
-            var recording = recorder is not null;
-            if (recordButton.Checked != recording)
-                recordButton.Checked = recording;
-
-            if (recordItem.Checked != recording)
-                recordItem.Checked = recording;
-
-            recordLabel.Text = recorder is null ? "" : $"{TimeSpan.FromSeconds(recorder.SecondsWritten):mm\\:ss}{(recorder.FramesDropped > 0 ? " · dropped " + recorder.FramesDropped : "")}{(recorder.Error is null ? "" : " · " + recorder.Error.Message)}";
-            if (recorder?.Error is not null)
-                ToggleRecording();
-        }
-        finally
-        {
-            syncingToolbar = false;
-        }
+        recordLabel.Text = recorder is null ? "" : $"{TimeSpan.FromSeconds(recorder.SecondsWritten):mm\\:ss}{(recorder.FramesDropped > 0 ? " · dropped " + recorder.FramesDropped : "")}{(recorder.Error is null ? "" : " · " + recorder.Error.Message)}";
+        if (recorder?.Error is not null)
+            ToggleRecording();
     }
 
     private void UpdateStatus()
     {
         var inv = CultureInfo.InvariantCulture;
         var now = Environment.TickCount64;
-        if (notice is not null && now < noticeUntil)
-            statusLabel.Text = notice;
-        else
-            statusLabel.Text = host.Description + (host.LastError is null ? "" : " — " + host.LastError);
-
+        statusLabel.Text = notice is not null && now < noticeUntil ? notice : host.Description + (host.LastError is null ? "" : " — " + host.LastError);
         loadLabel.Text = host.IsRunning
             ? $"load {(host.Load * 100).ToString("0", inv)} % · overruns {host.Overruns} · {host.LastBlockFrames} frames · latency {engine.LatencySamples} smp + {host.DeviceLatencyMs} ms"
             : "audio off";
@@ -581,6 +647,9 @@ internal sealed class MainForm : Form
         }
 
         lanesLabel.Text = $"lanes: {playing} playing{(recording > 0 ? ", " + recording + " recording" : "")}";
+        shortStatus = host.IsRunning
+            ? $"{(settings.Api == OutputApi.Asio ? "ASIO" : settings.Exclusive ? "WASAPI excl" : "WASAPI")} {host.SampleRate / 1000.0:0.#} kHz · load {(host.Load * 100).ToString("0", inv)} % · ovr {host.Overruns}{(host.Recorder is { } rec ? " · REC " + TimeSpan.FromSeconds(rec.SecondsWritten).ToString("mm\\:ss") : "")}"
+            : "audio off" + (host.LastError is null ? "" : ": " + host.LastError);
     }
 
     private void Notice(string text)
@@ -712,45 +781,15 @@ internal sealed class MainForm : Form
         var seed = fixedSeed != 0 ? (ulong)fixedSeed : seeds.Next();
         Randomizer.Randomize(engine, seed, (RandomizeScope)bank.GetInt(ParamId.RandomizeScope), bank.Get(ParamId.RandomizeAmount));
         seedLabel.Text = $"seed {seed}";
-        currentPresetPath = null;   // the patch is no longer the preset it started from: Save asks for a name
-        SelectPresetInBox(null);
-        panel.Monitor.SetLastSeed($"{seed} ({ParameterTable.RandomizeScopes[Math.Clamp(bank.GetInt(ParamId.RandomizeScope), 0, ParameterTable.RandomizeScopes.Count - 1)]}, {(bank.Get(ParamId.RandomizeAmount) * 100).ToString("0", CultureInfo.InvariantCulture)} %) — type it into Random Seed to recall it");
+        currentPresetPath = null;
         currentPresetName = $"random {seed}";
         UpdateTitle();
+        Notice($"Randomized: seed {seed}, {ParameterTable.RandomizeScopes[Math.Clamp(bank.GetInt(ParamId.RandomizeScope), 0, ParameterTable.RandomizeScopes.Count - 1)]}, {(bank.Get(ParamId.RandomizeAmount) * 100).ToString("0", CultureInfo.InvariantCulture)} % — type the seed into Random Seed to recall it");
     }
 
     // ---- Presets ----
 
-    private void FillPresetBox()
-    {
-        syncingToolbar = true;
-        try
-        {
-            presetBox.Items.Clear();
-            foreach (var preset in library.All)
-                presetBox.Items.Add((library.Factory.Contains(preset) ? "★ " : "") + preset.Name);
-
-            var index = library.IndexOf(currentPresetPath);
-            presetBox.SelectedIndex = index;
-        }
-        finally
-        {
-            syncingToolbar = false;
-        }
-    }
-
-    private void SelectPresetInBox(string? path)
-    {
-        syncingToolbar = true;
-        try
-        {
-            presetBox.SelectedIndex = library.IndexOf(path);
-        }
-        finally
-        {
-            syncingToolbar = false;
-        }
-    }
+    private void RefreshPresetNames() => presetNames = library.All.Select(preset => (library.Factory.Contains(preset) ? "★ " : "") + preset.Name).ToArray();
 
     private void StepPreset(int step)
     {
@@ -779,7 +818,6 @@ internal sealed class MainForm : Form
         engine.ApplyPreset(new PresetState { Name = "Init", Seed = engine.Seed });
         currentPresetPath = null;
         currentPresetName = "Init";
-        SelectPresetInBox(null);
         UpdateTitle();
     }
 
@@ -810,7 +848,6 @@ internal sealed class MainForm : Form
         engine.Samples.ClearAll();
         currentPresetPath = path;
         currentPresetName = state.Name;
-        SelectPresetInBox(path);
         UpdateTitle();
         Notice($"Loaded {state.Name}");
         if (state.Samples.Count == 0)
@@ -871,7 +908,7 @@ internal sealed class MainForm : Form
         currentPresetPath = path;
         currentPresetName = name;
         library.Rescan();
-        FillPresetBox();
+        RefreshPresetNames();
         UpdateTitle();
         Notice($"Saved {path}");
     }
@@ -897,34 +934,6 @@ internal sealed class MainForm : Form
         {
             Notice($"Preset not loaded: {ex.Message}");
         }
-    }
-
-    private void LoadSample()
-    {
-        var keyText = InputDialog.Prompt(this, "Load sample", "Sample map key (0 .. 127)", engine.Parameters.GetInt(ParamId.SamplerSelect).ToString(CultureInfo.InvariantCulture));
-        if (keyText is null || !int.TryParse(keyText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var key) || key is < 0 or > 127)
-            return;
-
-        using var dialog = new OpenFileDialog { Filter = MediaFoundationDecoding.FileFilter, Title = $"Load a sample into key {key}" };
-        if (dialog.ShowDialog(this) != DialogResult.OK)
-            return;
-
-        var path = dialog.FileName;
-        Notice($"Loading {Path.GetFileName(path)}…");
-        Task.Run(() => engine.Samples.Load(key, path)).ContinueWith(task =>
-        {
-            if (IsDisposed)
-                return;
-
-            if (task.IsFaulted)
-            {
-                Notice("Sample not loaded: " + (task.Exception?.GetBaseException().Message ?? "unknown error"));
-                return;
-            }
-
-            engine.Parameters.Set(ParamId.SamplerSelect, key);
-            Notice($"Loaded {task.Result.Name} on key {key} and selected it.");
-        }, TaskScheduler.FromCurrentSynchronizationContext());
     }
 
     private void LoadScale()
@@ -955,10 +964,11 @@ internal sealed class MainForm : Form
     private void ShowKeys()
     {
         MessageBox.Show(this,
-            "F5  Randomize\nF6  Restart lanes\nF7  Mute\nF8  Play / stop the internal transport\nF9  Record\nF10  Party mode\nF12  All notes off\n\n" +
-            "Ctrl+N  Init patch\nCtrl+O / Ctrl+S  Open / save preset\nCtrl+Left / Ctrl+Right  Previous / next preset\nCtrl+R  Random factory preset\nCtrl+M  Morph to a preset\nCtrl+B  Bounce\nCtrl+L  Load a sample\nCtrl+T  Tempo\nCtrl+,  Audio & MIDI settings\n\n" +
+            "Panel: Space restart lanes · R randomize · M mute (R and M play notes while the computer keyboard is a MIDI keyboard) · Ctrl+Z / Ctrl+Y undo / redo · Ctrl+Tab next page\n\n" +
+            "F5 Randomize · F6 Restart lanes · F7 Mute · F8 Play / stop the internal transport · F9 Record · F10 Party mode · F12 All notes off\n\n" +
+            "Ctrl+N Init · Ctrl+O / Ctrl+S Open / save preset · Ctrl+Left / Right previous / next preset · Ctrl+R random factory preset · Ctrl+M morph · Ctrl+B bounce · Ctrl+L load sample · Ctrl+T tempo · Ctrl+, audio settings · Ctrl+D developer panel · Ctrl+1/2/3 pages\n\n" +
             "Computer keyboard (when on): Z–M one octave with S D G H J as sharps, Q–P the next octave, minus / equals shift octaves.\n\n" +
-            "Lanes: Arm a fader, drag it to record, release; Auto plays the loop. Right-click a lane row for random loops and speed.",
+            "Lanes: click the small display under a fader to arm it, drag the fader to record, release; the button above the display plays the loop. Right-click a fader or knob for its lane menu.",
             "Keys");
     }
 

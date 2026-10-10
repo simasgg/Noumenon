@@ -14,6 +14,9 @@ internal sealed class LaunchOptions
 {
     public bool Smoke { get; private set; }
 
+    /// <summary>With the window: render every editor page to a PNG in this folder, then close (implies smoke).</summary>
+    public string? ScreenshotFolder { get; private set; }
+
     public string? PresetPath { get; private set; }
 
     public string? BouncePath { get; private set; }
@@ -49,6 +52,11 @@ internal sealed class LaunchOptions
             {
                 if (Is(a, "--smoke"))
                     options.Smoke = true;
+                else if (Is(a, "--screenshot") && hasValue)
+                {
+                    options.ScreenshotFolder = args[++i];
+                    options.Smoke = true;
+                }
                 else if (Is(a, "--preset") && hasValue)
                     options.PresetPath = args[++i];
                 else if (Is(a, "--bounce") && hasValue)
@@ -74,7 +82,7 @@ internal sealed class LaunchOptions
                 else if (Is(a, "--latency") && hasValue)
                     options.LatencyMs = int.Parse(args[++i], inv);
                 else
-                    options.Error = $"Unknown argument '{a}'. Options: --smoke, --preset <file|name>, --bounce <wav> [--minutes n] [--rate hz] [--float|--pcm24] [--seed n], --record <wav> [--seconds n] [--rate hz] [--exclusive|--shared] [--latency ms].";
+                    options.Error = $"Unknown argument '{a}'. Options: --smoke, --screenshot <folder>, --preset <file|name>, --bounce <wav> [--minutes n] [--rate hz] [--float|--pcm24] [--seed n], --record <wav> [--seconds n] [--rate hz] [--exclusive|--shared] [--latency ms].";
             }
             catch (FormatException)
             {

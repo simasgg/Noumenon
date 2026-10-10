@@ -115,6 +115,70 @@ public class CombinerAndOutputTests
         Assert.True(maxStep < 0.03f, $"mute clicked: max step {maxStep}");
     }
 
+
+    [Fact]
+    public void Pause_Fades_Out_Over_Its_Time_And_Back_In()
+    {
+        var o = MakeOutput();
+        o.SetPauseFade(0.5f);
+        var i = 0;
+        for (; i < SampleRate / 10; i++)
+            Run(o, ref i);
+
+        // Out: silent at the end of the fade, a gentle slope on the way (no step bigger than the mute glide allows).
+        o.SetPause(true);
+        var maxStep = 0f;
+        var prev = Run(o, ref i);
+        var halfway = 0f;
+        for (var end = i + SampleRate / 2; i < end; i++)
+        {
+            var l = Run(o, ref i);
+            maxStep = MathF.Max(maxStep, MathF.Abs(l - prev));
+            prev = l;
+            if (i == end - SampleRate / 4)
+                halfway = o.PauseLevel;
+        }
+
+        Assert.Equal(0f, o.PauseLevel);
+        Assert.True(MathF.Abs(halfway - 0.5f) < 0.01f, $"halfway through the fade the level was {halfway}");
+        Assert.True(maxStep < 0.03f, $"the fade stepped by {maxStep}");
+        var silent = Run(o, ref i);
+        Assert.Equal(0f, silent);
+
+        // In: back at unity after the same time, and the signal is the input again.
+        o.SetPause(false);
+        for (var end = i + SampleRate / 2; i < end; i++)
+            Run(o, ref i);
+
+        Assert.Equal(1f, o.PauseLevel);
+        var l2 = 0.5f;
+        var r2 = 0.5f;
+        o.Process(ref l2, ref r2);
+        Assert.True(MathF.Abs(l2 - 0.5f) < 0.01f, $"after the fade in the output was {l2}");
+    }
+
+    [Fact]
+    public void Pause_With_No_Fade_Is_As_Abrupt_As_Mute()
+    {
+        var o = MakeOutput();
+        o.SetPauseFade(0f);
+        o.SetPause(true);
+        var l = 0.5f;
+        var r = 0.5f;
+        o.Process(ref l, ref r);
+        Assert.Equal(0f, l);
+        Assert.Equal(0f, o.PauseLevel);
+    }
+
+    private static float Run(OutputStage o, ref int i)
+    {
+        var l = 0.5f * MathF.Sin(i * 0.05f);
+        var r = l;
+        o.Process(ref l, ref r);
+
+        return l;
+    }
+
     [Fact]
     public void Volume_At_Silence_Is_Zero_And_Dc_Is_Removed()
     {

@@ -371,6 +371,10 @@ public static class ParameterTable
             rows.Add(Linear(ModSlot(i, ModSlotParam.Depth), ParamGroup.ModMatrix, $"Mod Slot {i + 1} Depth", $"{tag} Dep", -1f, 1f, 0f, Units.None, ParamFlags.Addition));
         }
 
+        // Pause: a mute that fades, over Pause Fade seconds each way.
+        rows.Add(Toggle(ParamId.Pause, ParamGroup.Transport, "Pause", "Pause", false, ParamFlags.Addition));
+        rows.Add(Linear(ParamId.PauseFade, ParamGroup.Transport, "Pause Fade", "Fade", 0f, 10f, 0f, Units.Seconds, ParamFlags.Addition));
+
         if (rows.Count != ids.Length)
             throw new InvalidOperationException($"ParameterTable has {rows.Count} rows but ParamId has {ids.Length} members.");
 

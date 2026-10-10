@@ -54,6 +54,9 @@ internal sealed class HostSettings
 
     public string? LastPresetFolder { get; set; }
 
+    /// <summary>The editor's panel size: 1, 1.5 or 2.</summary>
+    public float EditorScale { get; set; } = 1f;
+
     public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Noumenon");
 
     public static string FilePath => Path.Combine(Folder, "settings.json");
@@ -106,6 +109,7 @@ internal sealed class HostSettings
         Tempo = other.Tempo;
         PartyIntervalSeconds = other.PartyIntervalSeconds;
         LastPresetFolder = other.LastPresetFolder;
+        EditorScale = other.EditorScale;
     }
 }
 
