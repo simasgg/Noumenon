@@ -15,11 +15,11 @@ namespace Noumenon.Ui.Widgets;
 /// </summary>
 public sealed class FaderWidget : Widget
 {
-    public const float Column = 20f;
+    public const float Column = 16f;
 
-    private const float SlotThickness = 8f;
-    private const float CapLong = 18f;
-    private const float CapShort = 9f;
+    private const float SlotThickness = 6f;
+    private const float CapLong = 10f;
+    private const float CapShort = 4f;
     private const float LabelHeight = 11f;
     private const float AutoButton = 8f;
     private const float Strip = 5f;
@@ -89,9 +89,7 @@ public sealed class FaderWidget : Widget
         if (label is not null && vertical)
             EditorDraw.Text(g, label, new RectangleF(Bounds.X - 10f, Bounds.Y, Bounds.Width + 20f, LabelHeight), EditorTheme.LabelFont, EditorTheme.Text, EditorTheme.Center);
 
-        var slot = Slot;
-        EditorDraw.FaderSlot(g, slot);
-        EditorDraw.FaderCap(g, CapRect(Displayed), vertical, Hot || dragging);
+        EditorDraw.FaderBar(g, Slot, binding.Normalized, binding.ResolvedNormalized, binding.IsBipolar, vertical, Hot || dragging);
 
         var lane = binding.Lane;
         if (lane is null)
@@ -183,7 +181,7 @@ public sealed class FaderWidget : Widget
             return;
         }
 
-        var cap = CapRect(Displayed);
+        var cap = CapRect(binding.Normalized);
         if (cap.Contains(p))
         {
             grabOffset = vertical ? cap.Y + cap.Height / 2f - p.Y : cap.X + cap.Width / 2f - p.X;

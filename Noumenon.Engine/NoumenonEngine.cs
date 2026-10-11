@@ -51,6 +51,7 @@ public sealed class NoumenonEngine
     private const float OrderSwitchSeconds = 0.02f;
     private const float DcCutoffHz = 5f;
     private const float SafetyReleaseSeconds = 0.2f;
+    private const float PeakHoldSeconds = 0.3f;
 
     private readonly Section[] sections = [new(), new()];
     private readonly Combiner combiner = new();
@@ -82,6 +83,7 @@ public sealed class NoumenonEngine
     private readonly PitchFader pitch2 = new();
     private readonly PresetMorph morph = new();
     private readonly float[] resochordNotes = new float[Resochord.VoiceCount];
+    private readonly float[] oscillatorHz = new float[ParameterTable.SectionCount * ParameterTable.SlotsPerSection];
     private readonly float[][] userChords = new float[UserChordCount][];
 
     private LaneSet lanes = new();
@@ -97,6 +99,9 @@ public sealed class NoumenonEngine
     private ulong seed = 1;
     private float previousReverbLeft;
     private float previousReverbRight;
+    private float peakRelease;
+    private float outputPeakLeft;
+    private float outputPeakRight;
 
     public NoumenonEngine()
     {
@@ -118,8 +123,11 @@ public sealed class NoumenonEngine
 
     public MidiInput Midi { get; } = new();
 
-    /// <summary>The post-Spin signal for the XY display.</summary>
+    /// <summary>The post-Drift signal for the XY display.</summary>
     public ScopeBuffer Scope { get; } = new();
+
+    /// <summary>The two sections after their filters, A as the left channel and B as the right, for the stack displays and the A-against-B figure.</summary>
+    public ScopeBuffer SectionScope { get; } = new();
 
     /// <summary>Parameters the randomizer must leave alone, by <see cref="ParamId"/> index; the panel's lock buttons.</summary>
     public bool[] Locks { get; } = new bool[ParameterTable.Count];
@@ -145,8 +153,8 @@ public sealed class NoumenonEngine
 
     public float GateEnvelopeValue => gateEnvelope.Value;
 
-    /// <summary>Where the Pause fade is: 1 running, 0 silent, in between while fading either way.</summary>
-    public float PauseLevel => output.PauseLevel;
+    /// <summary>Where the mute fade is: 1 running, 0 silent, in between while fading either way.</summary>
+    public float FadeLevel => output.FadeLevel;
 
     public double SamplePosition => sampler.Position;
 
@@ -164,6 +172,19 @@ public sealed class NoumenonEngine
     public Scale ActiveScale => ScaleFor(Parameters.GetInt(ParamId.Scale));
 
     public float ResochordNote(int voice) => Volatile.Read(ref resochordNotes[voice]);
+
+    /// <summary>The frequency a slot's oscillator was set to by the last control tick, 0 while the slot is off.</summary>
+    public float OscillatorHz(SectionId section, int slot) => Volatile.Read(ref oscillatorHz[(int)section * ParameterTable.SlotsPerSection + slot]);
+
+    /// <summary>The output's recent peak for a meter: instant attack, about 300 ms of release.</summary>
+    public float OutputPeakLeft => Volatile.Read(ref outputPeakLeft);
+
+    public float OutputPeakRight => Volatile.Read(ref outputPeakRight);
+
+    /// <summary>How far the post limiter is pulling its low band down right now, in dB, 0 when it is not limiting.</summary>
+    public float LimiterReductionLowDb => -DspHelper.LinearToDb(post.Limiter.LowReduction);
+
+    public float LimiterReductionHighDb => -DspHelper.LinearToDb(post.Limiter.HighReduction);
 
     public float[] UserChord(int slot) => (float[])Volatile.Read(ref userChords[slot]).Clone();
 
@@ -226,6 +247,7 @@ public sealed class NoumenonEngine
         reverb.Prepare(this.sampleRate);
         order.SetTime(this.sampleRate, OrderSwitchSeconds);
         output.Prepare(this.sampleRate);
+        peakRelease = MathF.Exp(-1f / (PeakHoldSeconds * (float)this.sampleRate));
         post.Prepare(this.sampleRate);
         safety.Prepare(hostSampleRate, SafetyReleaseSeconds);
         EnsureSilence(maxBlockSize);
@@ -446,7 +468,10 @@ public sealed class NoumenonEngine
 
         samplesUntilTick--;
 
-        var mono = combiner.Process(sections[0].Process(), sections[1].Process());
+        var a = sections[0].Process();
+        var b = sections[1].Process();
+        SectionScope.Write(a, b);
+        var mono = combiner.Process(a, b);
         sampler.Process(inputLeft, inputRight, out var sampleLeft, out var sampleRight, out var dry);
         var envelope = follower.Process(dry);
         var depth = amDepth.Next();
@@ -476,6 +501,10 @@ public sealed class NoumenonEngine
 
         output.Process(ref l, ref r);
         post.Process(ref l, ref r);
+        var peakL = l < 0f ? -l : l;
+        var peakR = r < 0f ? -r : r;
+        outputPeakLeft = peakL > outputPeakLeft ? peakL : DspHelper.Undenormalize(outputPeakLeft * peakRelease);
+        outputPeakRight = peakR > outputPeakRight ? peakR : DspHelper.Undenormalize(outputPeakRight * peakRelease);
         left = l;
         right = r;
     }
@@ -560,7 +589,10 @@ public sealed class NoumenonEngine
                 var on = RB(ParameterTable.Osc(id, slot, OscParam.On));
                 section.SetSlotGain(slot, on ? R(ParameterTable.Osc(id, slot, OscParam.Level)) * R(ParameterTable.Osc(id, slot, OscParam.Trim)) : 0f);
                 if (!on)
+                {
+                    Volatile.Write(ref oscillatorHz[s * ParameterTable.SlotsPerSection + slot], 0f);
                     continue;
+                }
 
                 osc.Waveform = (Waveform)RI(ParameterTable.Osc(id, slot, OscParam.Wave));
                 var route1 = routeAll1 || RB(ParameterTable.Osc(id, slot, OscParam.P1Route));
@@ -570,7 +602,9 @@ public sealed class NoumenonEngine
                     semitone = scale.Quantize(semitone, root);
 
                 var fine = R(ParameterTable.Osc(id, slot, OscParam.Fine));
-                osc.SetFrequency(Tuning.OscillatorHz(semitone, fine, p1, p2, route1, route2, fine1, fine2, a4));
+                var hz = Tuning.OscillatorHz(semitone, fine, p1, p2, route1, route2, fine1, fine2, a4);
+                osc.SetFrequency(hz);
+                Volatile.Write(ref oscillatorHz[s * ParameterTable.SlotsPerSection + slot], hz);
                 osc.SetShape(R(ParameterTable.Osc(id, slot, OscParam.Shape)));
                 osc.SetNoiseCutoff(R(ParameterTable.Osc(id, slot, OscParam.NoiseCutoff)));
             }
@@ -673,7 +707,7 @@ public sealed class NoumenonEngine
         output.SetWidth(R(ParamId.OutputWidth));
         output.SetMute(RB(ParamId.Mute));
         output.SetPause(RB(ParamId.Pause));
-        output.SetPauseFade(R(ParamId.PauseFade));
+        output.SetFade(R(ParamId.PauseFade));
 
         post.Filter.SetEnabled(RB(ParamId.PostFilterOn));
         post.Filter.SetMix(R(ParamId.PostFilterMix));

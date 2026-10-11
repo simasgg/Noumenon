@@ -9,7 +9,10 @@ namespace Noumenon.Ui.Widgets;
 /// a draw routine, an optional per-frame <see cref="Update"/> that says whether it changed,
 /// and mouse handlers in logical coordinates. Static widgets (labels, frames) are rendered once
 /// into the surface's cached background; everything else is redrawn only when it reports a
-/// change or is invalidated. A widget never touches the engine from any thread but the UI's.
+/// change or is invalidated. A widget can also paint an overlay above every other widget (the
+/// knobs' value badge): it reports the overlay's rectangle whether or not it is drawing one, so
+/// the area repaints both when the overlay appears and when it goes. A widget never touches
+/// the engine from any thread but the UI's.
 /// </summary>
 public abstract class Widget
 {
@@ -31,6 +34,14 @@ public abstract class Widget
 
     /// <summary>UI timer: returns true when the drawn state changed since the last call.</summary>
     public virtual bool Update() => false;
+
+    /// <summary>Where <see cref="DrawOverlay"/> paints, or where it last did; empty for a widget that never overlays.</summary>
+    public virtual RectangleF OverlayBounds => RectangleF.Empty;
+
+    /// <summary>Painted after every widget's <see cref="Draw"/>, so nothing can cover it.</summary>
+    public virtual void DrawOverlay(Graphics g)
+    {
+    }
 
     public virtual void MouseDown(PointF p, MouseButtons button, int clicks)
     {

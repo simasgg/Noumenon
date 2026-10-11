@@ -8,7 +8,8 @@ namespace Noumenon.Ui.Widgets;
 /// The control every page is drawn on. It owns the widget list, scales a fixed logical layout by
 /// an integer-ish factor, keeps the static layer (chassis, frames, labels) in a cached bitmap and
 /// repaints only the rectangles of widgets that report a change from the 30 fps poll, so an
-/// idle panel costs almost nothing while faders that play themselves still animate. Mouse events
+/// idle panel costs almost nothing while faders that play themselves still animate; overlays (a
+/// knob's value badge) are painted after every widget, so nothing covers them. Mouse events
 /// are mapped to logical coordinates and routed to the topmost widget under the pointer, which
 /// keeps capture until the button is released; a press-to-release is one undo gesture. The
 /// context menus the widgets open are shown and owned here until the next one replaces them.
@@ -108,7 +109,15 @@ public sealed class EditorSurface : Control
         Invalidate();
     }
 
-    public void InvalidateWidget(Widget widget) => Invalidate(Rectangle.Inflate(ToDevice(widget.Bounds), 3, 3));
+    public void InvalidateWidget(Widget widget)
+    {
+        var area = widget.Bounds;
+        var overlay = widget.OverlayBounds;
+        if (!overlay.IsEmpty)
+            area = RectangleF.Union(area, overlay);
+
+        Invalidate(Rectangle.Inflate(ToDevice(area), 3, 3));
+    }
 
     public void RunGesture(Action change)
     {
@@ -282,6 +291,13 @@ public sealed class EditorSurface : Control
         {
             if (!widget.IsStatic && widget.Visible && widget.Bounds.IntersectsWith(logicalClip))
                 widget.Draw(g);
+        }
+
+        foreach (var widget in widgets)
+        {
+            var overlay = widget.OverlayBounds;
+            if (!widget.IsStatic && widget.Visible && !overlay.IsEmpty && overlay.IntersectsWith(logicalClip))
+                widget.DrawOverlay(g);
         }
     }
 

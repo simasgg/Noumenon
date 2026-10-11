@@ -5,10 +5,11 @@ namespace Noumenon.Dsp.Output;
 
 /// <summary>
 /// MF's output controls: DC blocking, the Width control (mid/side: 0 = mono, 1 = as is, 2 = the
-/// side signal doubled), the Volume fader and Mute (both through one glided gain, so muting never
-/// clicks), and Pause: a mute that takes its time, a smoothstep fade of the same gain over a set
-/// number of seconds out and back in, so the drone can leave and return gently. Sits after the
-/// Resochord/Reverb pair and before the Fabrications post section; the engine's safety
+/// side signal doubled), the Volume fader through a glided gain, and Mute as a fade: a smoothstep
+/// ramp of the same gain over a set number of seconds out and back in, so the drone can leave and
+/// return gently. At zero seconds the ramp still takes the gain's 20 ms, so a mute never clicks.
+/// Pause is a second switch into the same fade, for hosts that automate it apart from Mute. Sits
+/// after the Resochord/Reverb pair and before the Fabrications post section; the engine's safety
 /// <see cref="PeakLimiter"/> comes last of all.
 /// </summary>
 public sealed class OutputStage
@@ -22,10 +23,10 @@ public sealed class OutputStage
     private readonly Smoother width = new();
 
     private double sampleRate = 48000.0;
-    private float volumeLinear = 1f;
     private bool muted;
-    private float fadeSeconds = 0f;
-    private double fadeStep = 1.0;
+    private bool paused;
+    private float fadeSeconds;
+    private double fadeStep;
     private double fadeTarget = 1.0;
     private double fadeLevel = 1.0;
 
@@ -33,29 +34,30 @@ public sealed class OutputStage
     {
         gain.Snap(1f);
         width.Snap(1f);
+        UpdateFadeStep();
     }
 
-    public void SetVolumeDb(float db)
-    {
-        volumeLinear = DspHelper.DbToLinear(db);
-        UpdateGain();
-    }
+    public void SetVolumeDb(float db) => gain.Target = DspHelper.DbToLinear(db);
 
     public void SetMute(bool mute)
     {
         muted = mute;
-        UpdateGain();
+        UpdateFadeTarget();
+    }
+
+    public void SetPause(bool pause)
+    {
+        paused = pause;
+        UpdateFadeTarget();
     }
 
     public void SetWidth(float value) => width.Target = DspHelper.Clamp(value, 0f, 2f);
 
-    /// <summary>1 while running, 0 once the pause fade has reached silence, in between while fading either way.</summary>
-    public float PauseLevel => (float)fadeLevel;
+    /// <summary>1 while running, 0 once the mute fade has reached silence, in between while fading either way.</summary>
+    public float FadeLevel => (float)fadeLevel;
 
-    public void SetPause(bool paused) => fadeTarget = paused ? 0.0 : 1.0;
-
-    /// <summary>The length of the fade out and of the fade in; zero makes Pause as abrupt as Mute.</summary>
-    public void SetPauseFade(float seconds)
+    /// <summary>The length of the fade out and of the fade in; zero leaves the 20 ms glide.</summary>
+    public void SetFade(float seconds)
     {
         if (seconds == fadeSeconds)
             return;
@@ -101,7 +103,7 @@ public sealed class OutputStage
         right = (mid - side) * g;
     }
 
-    private void UpdateGain() => gain.Target = muted ? 0f : volumeLinear;
+    private void UpdateFadeTarget() => fadeTarget = muted || paused ? 0.0 : 1.0;
 
-    private void UpdateFadeStep() => fadeStep = fadeSeconds > 0f ? 1.0 / (sampleRate * fadeSeconds) : 1.0;
+    private void UpdateFadeStep() => fadeStep = 1.0 / (sampleRate * Math.Max(fadeSeconds, GainSmoothSeconds));
 }

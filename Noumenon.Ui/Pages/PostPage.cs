@@ -42,6 +42,8 @@ internal static class PostPage
         w.Add(new ChoiceButtonsWidget(engine, ParamId.PostLimiterSpeed, 596, Top + 36, 170, 14));
         w.Add(new LabelWidget("LOW / HIGH: thresholds per band", 596, Top + 60, 176, 12, EditorTheme.Left, EditorTheme.SmallFont));
         w.Add(new LabelWidget("SPLIT: the crossover frequency", 596, Top + 74, 176, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new MeterWidget(() => engine.LimiterReductionLowDb, 596, Top + 94, 170, 8, MeterScale.Reduction, "LO"));
+        w.Add(new MeterWidget(() => engine.LimiterReductionHighDb, 596, Top + 106, 170, 8, MeterScale.Reduction, "HI"));
 
         w.Add(new FrameWidget(782, Top, 214, 130, "POST VOLUME  ·  OUTPUT"));
         w.Add(new KnobWidget(engine, ParamId.PostVolume, 796, Top + 40, 36, "POST"));
@@ -49,7 +51,7 @@ internal static class PostPage
         w.Add(new KnobWidget(engine, ParamId.OutputWidth, 932, Top + 40, 36, "WIDTH"));
 
         w.Add(new FrameWidget(4, Top + 140, 992, 60, null, inset: true));
-        w.Add(new LabelWidget("Signal path:  sections → combine → × AM → + sampler → gate → DC → master filter → distortion → EQ → spin → [scope] → resochord / reverb → volume · width → post filter → post EQ → limiter → post volume → safety limiter", 14, Top + 146, 972, 16, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Signal path:  sections → combine → × AM → + sampler → gate → DC → master filter → distortion → EQ → drift → [scope] → resonator / reverb → volume · width → post filter → post EQ → limiter → post volume → safety limiter", 14, Top + 146, 972, 16, EditorTheme.Left, EditorTheme.SmallFont));
         w.Add(new DisplayTextWidget(() => $"engine {engine.HostSampleRate.ToString("0", inv)} Hz × {engine.Oversampling}  ·  latency {engine.LatencySamples} samples  ·  scale {engine.ActiveScale.Name}  ·  seed {engine.Seed}", 14, Top + 170, 972, 16, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark, format: EditorTheme.Left));
 
         return new PageContent(w, null);

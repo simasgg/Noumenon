@@ -7,7 +7,7 @@ namespace Noumenon.Ui.Pages;
 
 /// <summary>
 /// The MOD tab: everything the main panel has no room for — the three LFOs, the envelope
-/// follower, the macros, the twelve-slot modulation matrix, the Resochord voices and user chords,
+/// follower, the macros, the twelve-slot modulation matrix, the resonator voices and user chords,
 /// play mode, scale and tuning, host sync and engine rate, the Phase 9 sample-mode parameters —
 /// so every parameter in the table is reachable from the editor.
 /// </summary>
@@ -55,11 +55,11 @@ internal static class ModPage
             w.Add(new LabelWidget((slot + 1).ToString(inv), 10, y, 18, 14, EditorTheme.Center, EditorTheme.SmallFont));
             w.Add(new MenuWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Source), 30, y, 96));
             w.Add(new MenuWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Target), 132, y, 200));
-            w.Add(new KnobWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Depth), 346, y - 4, 22));
+            w.Add(new KnobWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Depth), 346, y - 4, 22, showValue: false));   // the number box beside it is the readout
             w.Add(new NumberWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Depth), 374, y + 1, 42));
         }
 
-        w.Add(new FrameWidget(430, Top + 102, 300, 228, "RESOCHORD VOICES"));
+        w.Add(new FrameWidget(430, Top + 102, 300, 228, "RESONATOR VOICES"));
         w.Add(new LabelWidget("NOTE", 454, Top + 118, 40, 11, EditorTheme.Center, EditorTheme.SmallFont));
         w.Add(new LabelWidget("FB", 498, Top + 118, 30, 11, EditorTheme.Center, EditorTheme.SmallFont));
         w.Add(new LabelWidget("DAMP", 544, Top + 118, 30, 11, EditorTheme.Center, EditorTheme.SmallFont));
@@ -68,7 +68,7 @@ internal static class ModPage
         w.Add(new LabelWidget("RINGS", 668, Top + 118, 56, 11, EditorTheme.Center, EditorTheme.SmallFont));
         for (var v = 0; v < ParameterTable.ResoVoiceCount; v++)
         {
-            var y = Top + 132 + v * 30f;
+            var y = Top + 132 + v * 33f;   // leaves the knobs' value strip between the rows
             var voice = v;
             w.Add(new LabelWidget((v + 1).ToString(inv), 436, y, 16, 14, EditorTheme.Center, EditorTheme.SmallFont));
             w.Add(new NumberWidget(engine, ParameterTable.ResoVoice(v, ResoVoiceParam.Note), 454, y + 1, 40));
@@ -116,12 +116,12 @@ internal static class ModPage
         w.Add(new LabelWidget("Granular and Stretch arrive in Phase 9; Classic ignores these.", 746, Top + 298, 244, 24, EditorTheme.Left, EditorTheme.SmallFont));
 
         w.Add(new FrameWidget(736, Top + 336, 260, 126, "KEYS", inset: true));
-        w.Add(new LabelWidget("Space  restart lanes      R  randomize      M  mute", 746, Top + 354, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Space  restart lanes    R  randomize    M  mute", 746, Top + 354, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
         w.Add(new LabelWidget("Ctrl+Z / Ctrl+Y  undo / redo", 746, Top + 368, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("Fader: drag · wheel · double-click = default", 746, Top + 386, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Bar: drag · wheel · double-click = default", 746, Top + 386, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
         w.Add(new LabelWidget("Lane: click the small display to arm, drag to record,", 746, Top + 400, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
         w.Add(new LabelWidget("release, then the button plays the loop. Right-click: menu.", 746, Top + 414, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("Scope: drag = X/Y phase, wheel = zoom, double-click = reset", 746, Top + 432, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Stack: drag a mark for pitch / level · Scope: drag = phases, wheel = zoom", 746, Top + 432, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
 
         return new PageContent(w, null);
     }

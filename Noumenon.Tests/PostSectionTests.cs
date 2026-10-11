@@ -102,4 +102,23 @@ public class PostSectionTests
 
         Assert.True(maxStep < 0.08f, $"stepped by {maxStep}");
     }
+
+    [Fact]
+    public void Limiter_Reduction_Readout_Shows_How_Hard_Each_Band_Works()
+    {
+        var p = Make(lowThresholdDb: -12f, highThresholdDb: -12f);
+        PeakOfSine(p, 1000f, 0.9f);
+
+        Assert.True(p.Limiter.HighReduction < 0.5f, $"high band {p.Limiter.HighReduction}");
+        Assert.True(p.Limiter.LowReduction > 0.9f, $"low band {p.Limiter.LowReduction}");
+
+        for (var i = 0; i < SampleRate * 2; i++)
+        {
+            var l = 0f;
+            var r = 0f;
+            p.Process(ref l, ref r);
+        }
+
+        Assert.True(p.Limiter.HighReduction > 0.99f, $"after two silent seconds {p.Limiter.HighReduction}");
+    }
 }

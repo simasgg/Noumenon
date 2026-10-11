@@ -1,4 +1,5 @@
 using Noumenon.Dsp.Oscillators;
+using Noumenon.Dsp.Shared;
 using Noumenon.Engine;
 using Noumenon.Engine.Parameters;
 
@@ -270,5 +271,49 @@ public class EngineTests
             Assert.True(float.IsFinite(l[i]), $"non-finite at {i} after the rate change");
 
         Assert.True(Rms(l) > 0.02);
+    }
+
+    [Fact]
+    public void Oscillator_Hz_Readout_Follows_The_Slot()
+    {
+        var engine = Make();
+        engine.Parameters.Set(ParamId.OscA1On, true);
+        engine.Parameters.Set(ParamId.OscA1Semitone, 7f);
+        engine.Parameters.Set(ParamId.OscA1Fine, 0f);
+        engine.Parameters.Set(ParamId.OscA1P1Route, false);
+        engine.Parameters.Set(ParamId.OscA1P2Route, false);
+        engine.Parameters.Set(ParameterTable.Section(SectionId.A, SectionParam.P1RouteAll), false);
+        engine.Parameters.Set(ParameterTable.Section(SectionId.A, SectionParam.P2RouteAll), false);
+        engine.Parameters.Set(ParamId.OscA2On, false);
+        Render(engine, 512);
+
+        Assert.Equal(Tuning.NoteToHz(Tuning.MiddleC + 7f), engine.OscillatorHz(SectionId.A, 0), 1);
+        Assert.Equal(0f, engine.OscillatorHz(SectionId.A, 1));
+    }
+
+    [Fact]
+    public void Section_Scope_Carries_Both_Sections()
+    {
+        var engine = Make();
+        Render(engine, 4096);
+        var a = new float[1024];
+        var b = new float[1024];
+        engine.SectionScope.CopyLatest(a, b, a.Length);
+
+        Assert.Contains(a, v => MathF.Abs(v) > 0.01f);
+        Assert.Contains(b, v => MathF.Abs(v) > 0.01f);
+    }
+
+    [Fact]
+    public void Output_Peak_Readout_Rises_And_Releases()
+    {
+        var engine = Make();
+        Render(engine, SampleRate);   // Drift is a through-delay: the first 120 ms of output are its empty line
+        Assert.True(engine.OutputPeakLeft > 0.01f, $"peak {engine.OutputPeakLeft}");
+
+        engine.Parameters.Set(ParamId.Mute, true);
+        Render(engine, SampleRate * 2);
+
+        Assert.True(engine.OutputPeakLeft < 0.001f, $"peak after two muted seconds {engine.OutputPeakLeft}");
     }
 }

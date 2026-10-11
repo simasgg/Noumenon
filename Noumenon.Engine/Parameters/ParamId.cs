@@ -91,5 +91,5 @@ public enum ParamId
     ModSlot12Source, ModSlot12Target, ModSlot12Depth,
 
     // ---- Added after the matrix (append-only: the index is the plugin ID and the preset key) ----
-    Pause, PauseFade,
+    Pause, PauseFade, ScopeMode,
 }

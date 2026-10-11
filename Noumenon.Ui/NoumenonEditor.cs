@@ -11,8 +11,8 @@ namespace Noumenon.Ui;
 /// wrappers host, scaled 1×, 1.5× or 2×. Its own bar across the top holds the preset name and
 /// bank, save, undo and redo, the MAIN / POST / MOD tabs and the scale; the pages hold every
 /// parameter. It talks to the engine directly and to the host only for presets and files. Each
-/// mouse gesture becomes one undo entry of the whole bank; Space restarts the lanes, R randomizes
-/// and M mutes unless the host is using letters as piano keys.
+/// mouse gesture becomes one undo entry of the whole bank; Space restarts the lanes, R randomizes,
+/// M mutes unless the host is using letters as piano keys.
 /// </summary>
 public sealed class NoumenonEditor : UserControl
 {
@@ -104,7 +104,7 @@ public sealed class NoumenonEditor : UserControl
                 {
                     switch (widget)
                     {
-                        case KnobWidget or FaderWidget or NumberWidget or ScopeWidget or SpeedWidget or ChoiceButtonsWidget or ToggleWidget:
+                        case KnobWidget or FaderWidget or NumberWidget or ScopeWidget or SpeedWidget or ChoiceButtonsWidget or ToggleWidget or StackWidget or LaneOverviewWidget or MeterWidget or ResonatorStripWidget:
                             widget.MouseDown(centre, MouseButtons.Left, 1);
                             widget.MouseMove(moved, MouseButtons.Left);
                             widget.MouseUp(moved, MouseButtons.Left);
@@ -123,6 +123,7 @@ public sealed class NoumenonEditor : UserControl
                     using var bitmap = new Bitmap(4, 4);
                     using var g = Graphics.FromImage(bitmap);
                     widget.Draw(g);
+                    widget.DrawOverlay(g);
                 }
                 catch (Exception ex)
                 {
@@ -162,9 +163,6 @@ public sealed class NoumenonEditor : UserControl
             case Keys.M when !host.KeyboardNotesActive:
                 engine.Parameters.Set(ParamId.Mute, !engine.Parameters.GetBool(ParamId.Mute));
                 return true;
-            case Keys.P when !host.KeyboardNotesActive:
-                engine.Parameters.Set(ParamId.Pause, !engine.Parameters.GetBool(ParamId.Pause));
-                return true;
             case Keys.Control | Keys.Z:
                 Undo();
                 return true;
@@ -181,7 +179,7 @@ public sealed class NoumenonEditor : UserControl
 
     private void BuildBar()
     {
-        bar.Add(new DisplayTextWidget(() => host.CurrentPresetName, 6, 4, 220, 16, ShowPresetMenu, "Preset: click for the bank", EditorTheme.ValueFont, EditorTheme.Trace, EditorTheme.Left));
+        bar.Add(new DisplayTextWidget(() => host.CurrentPresetName, 6, 4, 220, 16, ShowPresetMenu, "Preset: click for the bank", EditorTheme.ValueFont, EditorTheme.Readout, EditorTheme.Left));
         bar.Add(new TextButtonWidget("◀", 230, 4, 16, 16, () => StepPreset(-1), tooltip: "Previous preset"));
         bar.Add(new TextButtonWidget("▶", 248, 4, 16, 16, () => StepPreset(1), tooltip: "Next preset"));
         bar.Add(new TextButtonWidget("SAVE", 270, 4, 40, 16, host.SavePreset, tooltip: "Save the snapshot as a preset"));

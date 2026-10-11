@@ -117,16 +117,16 @@ public class CombinerAndOutputTests
 
 
     [Fact]
-    public void Pause_Fades_Out_Over_Its_Time_And_Back_In()
+    public void Mute_Fades_Out_Over_Its_Time_And_Back_In()
     {
         var o = MakeOutput();
-        o.SetPauseFade(0.5f);
+        o.SetFade(0.5f);
         var i = 0;
         for (; i < SampleRate / 10; i++)
             Run(o, ref i);
 
-        // Out: silent at the end of the fade, a gentle slope on the way (no step bigger than the mute glide allows).
-        o.SetPause(true);
+        // Out: silent at the end of the fade, a gentle slope on the way (no step bigger than the glide allows).
+        o.SetMute(true);
         var maxStep = 0f;
         var prev = Run(o, ref i);
         var halfway = 0f;
@@ -136,21 +136,21 @@ public class CombinerAndOutputTests
             maxStep = MathF.Max(maxStep, MathF.Abs(l - prev));
             prev = l;
             if (i == end - SampleRate / 4)
-                halfway = o.PauseLevel;
+                halfway = o.FadeLevel;
         }
 
-        Assert.Equal(0f, o.PauseLevel);
+        Assert.Equal(0f, o.FadeLevel);
         Assert.True(MathF.Abs(halfway - 0.5f) < 0.01f, $"halfway through the fade the level was {halfway}");
         Assert.True(maxStep < 0.03f, $"the fade stepped by {maxStep}");
         var silent = Run(o, ref i);
         Assert.Equal(0f, silent);
 
         // In: back at unity after the same time, and the signal is the input again.
-        o.SetPause(false);
+        o.SetMute(false);
         for (var end = i + SampleRate / 2; i < end; i++)
             Run(o, ref i);
 
-        Assert.Equal(1f, o.PauseLevel);
+        Assert.Equal(1f, o.FadeLevel);
         var l2 = 0.5f;
         var r2 = 0.5f;
         o.Process(ref l2, ref r2);
@@ -158,16 +158,46 @@ public class CombinerAndOutputTests
     }
 
     [Fact]
-    public void Pause_With_No_Fade_Is_As_Abrupt_As_Mute()
+    public void Mute_With_No_Fade_Takes_The_Glide_Time()
     {
         var o = MakeOutput();
-        o.SetPauseFade(0f);
+        o.SetFade(0f);
+        var i = 0;
+        for (; i < 100; i++)
+            Run(o, ref i);
+
+        o.SetMute(true);
+        var first = Run(o, ref i);
+        Assert.True(MathF.Abs(first) > 0.1f, $"the first sample after a mute was {first}: a mute glides, it never jumps");
+        for (var end = i + SampleRate / 40; i < end; i++)
+            Run(o, ref i);
+
+        Assert.Equal(0f, o.FadeLevel);
+        Assert.Equal(0f, Run(o, ref i));
+    }
+
+    [Fact]
+    public void Pause_Is_A_Second_Switch_Into_The_Same_Fade()
+    {
+        var o = MakeOutput();
+        o.SetFade(0.5f);
+        var i = 0;
         o.SetPause(true);
-        var l = 0.5f;
-        var r = 0.5f;
-        o.Process(ref l, ref r);
-        Assert.Equal(0f, l);
-        Assert.Equal(0f, o.PauseLevel);
+        for (var end = i + SampleRate / 4; i < end; i++)
+            Run(o, ref i);
+
+        Assert.True(MathF.Abs(o.FadeLevel - 0.5f) < 0.01f, $"a quarter second into a half-second fade the level was {o.FadeLevel}");
+        o.SetMute(true);
+        o.SetPause(false);   // still muted: the fade keeps going out
+        for (var end = i + SampleRate / 4; i < end; i++)
+            Run(o, ref i);
+
+        Assert.Equal(0f, o.FadeLevel);
+        o.SetMute(false);
+        for (var end = i + SampleRate / 2; i < end; i++)
+            Run(o, ref i);
+
+        Assert.Equal(1f, o.FadeLevel);
     }
 
     private static float Run(OutputStage o, ref int i)

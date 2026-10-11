@@ -161,4 +161,12 @@ public class ParameterTableTests
         Assert.True(ParameterTable.Get(ParamId.SpinTime1).IsLaneCapable);
         Assert.False(ParameterTable.Get(ParamId.OscA1Wave).IsLaneCapable);
     }
+
+    [Fact]
+    public void Scope_Modes_Match_The_Row()
+    {
+        Assert.Equal(3, ParameterTable.ScopeModes.Count);
+        Assert.Equal(ParameterTable.ScopeModes.Count, ParameterTable.Get(ParamId.ScopeMode).Choices.Count);
+        Assert.Equal("Scope Mode", ParameterTable.Get(ParamId.ScopeMode).Name);
+    }
 }

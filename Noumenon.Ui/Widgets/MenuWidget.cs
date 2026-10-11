@@ -25,7 +25,7 @@ public sealed class MenuWidget : Widget
     public override void Draw(Graphics g)
     {
         EditorDraw.Display(g, Bounds);
-        EditorDraw.Text(g, binding.ValueText, new RectangleF(Bounds.X + 3f, Bounds.Y, Bounds.Width - 14f, Bounds.Height), EditorTheme.SmallValueFont, down ? EditorTheme.TextLight : EditorTheme.Trace, EditorTheme.Left);
+        EditorDraw.Text(g, binding.ValueText, new RectangleF(Bounds.X + 3f, Bounds.Y, Bounds.Width - 14f, Bounds.Height), EditorTheme.SmallValueFont, down ? EditorTheme.TextLight : EditorTheme.Readout, EditorTheme.Left);
         EditorDraw.Chevron(g, new RectangleF(Bounds.Right - 10f, Bounds.Y + Bounds.Height / 2f - 2f, 6f, 4f), EditorTheme.TraceDim);
     }
 
@@ -109,6 +109,8 @@ public sealed class MenuWidget : Widget
         ParamGroup.SectionA => "Section A",
         ParamGroup.SectionB => "Section B",
         ParamGroup.MasterFilter => "Master filter",
+        ParamGroup.Spin => "Drift",
+        ParamGroup.Resochord => "Resonator",
         ParamGroup.ModWheel => "Mod wheel",
         ParamGroup.PlayMode => "Play mode",
         ParamGroup.ModMatrix => "Modulation",

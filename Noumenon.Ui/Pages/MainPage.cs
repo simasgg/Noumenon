@@ -7,264 +7,318 @@ using Noumenon.Ui.Widgets;
 namespace Noumenon.Ui.Pages;
 
 /// <summary>
-/// The main panel in the layout of the instrument it follows: the effect strip across the top
-/// (filter, distortion, EQ, spin, resochord, reverb, volume), section A on the left and B on the
-/// right with their routing rows, waveform icons, pitch readouts and level faders, the P1/P2
-/// faders, the A+B / A×B crossfade and the XY scope down the centre, the sampler bottom-left,
-/// the transport bottom-right, the mod-wheel box under the scope. Coordinates are logical
-/// pixels on a 1000 × 664 canvas whose top 24 are the editor's own bar.
+/// The main panel, laid out as the signal flows: the two oscillator sections as strips (a stack
+/// display over six slot cards each), the pitch faders and the sampler beneath them, the main
+/// display with the combine controls in the column to their right, the effect chain as a row of
+/// modules left to right into the output module, and along the bottom the lanes, the transport,
+/// the mod-wheel box and the wordmark. Coordinates are logical pixels on a 1000 × 664 canvas
+/// whose top 24 are the editor's own bar.
 /// </summary>
 internal static class MainPage
 {
-    private const float StripTop = 28f;
-    private const float StripHeight = 110f;
-    private const float SectionTop = 144f;
-    private const float SectionHeight = 302f;
-    private const float BottomTop = 452f;
-    private const float BottomHeight = 208f;
-    private const float SlotWidth = 36f;
-    private const float CaptionRow = 16f;
-    private const float FaderTop = 28f;
-    private const float FaderLength = 48f;
+    private const float Top = 28f;
+    private const float SourceWidth = 762f;
+    private const float SectionHeight = 112f;
+    private const float PitchTop = 260f;
+    private const float SampleTop = 298f;
+    private const float ColumnX = 770f;
+    private const float ColumnWidth = 226f;
+    private const float ChainTop = 368f;
+    private const float ChainHeight = 112f;
+    private const float BottomTop = 486f;
+    private const float BottomHeight = 174f;
+    private const float CardWidth = 110f;
+    private const float CardStep = 111f;
+    private const float CardsX = 90f;
 
     public static PageContent Build(NoumenonEngine engine, IEditorHost host)
     {
         var w = new List<Widget>();
-        BuildStrip(engine, w);
-        BuildSection(engine, w, SectionId.A);
-        BuildSection(engine, w, SectionId.B);
-        BuildCentre(engine, w);
-        BuildSampler(engine, host, w);
+        BuildSection(engine, w, SectionId.A, Top);
+        BuildSection(engine, w, SectionId.B, Top + SectionHeight + 4f);
+        BuildPitch(engine, w);
+        BuildSample(engine, host, w);
+        BuildColumn(engine, w);
+        BuildChain(engine, w);
+        BuildOut(engine, w);
+        BuildLanes(engine, w);
         BuildTransport(engine, w);
+        BuildWheel(engine, w);
+        BuildWordmark(engine, w);
 
         return new PageContent(w, null);
     }
 
-    private static void BuildStrip(NoumenonEngine engine, List<Widget> w)
+    // ---- Sources ----
+
+    private static void BuildSection(NoumenonEngine engine, List<Widget> w, SectionId section, float top)
     {
-        // FILTER
-        Module(w, 4, 146, "FILTER", engine, ParamId.MasterFilterOn);
-        w.Add(new KnobWidget(engine, ParamId.MasterFilterMorph, 14, StripTop + 30, 28, "LP-HP"));
-        w.Add(new KnobWidget(engine, ParamId.MasterFilterMix, 116, StripTop + 34, 24, "MIX"));
-        Fader(w, engine, ParamId.MasterFilterCutoff, 64, "CUT");
-        Fader(w, engine, ParamId.MasterFilterReso, 96, "RES");
+        w.Add(new FrameWidget(4, top, SourceWidth, SectionHeight));
 
-        // DISTORTION
-        Module(w, 154, 124, "DISTORTION", engine, ParamId.DistortionOn);
-        Fader(w, engine, ParamId.DistortionMix, 176, "MIX");
-        Fader(w, engine, ParamId.DistortionDrive, 208, "DRIVE");
-        w.Add(new LabelWidget("CURVE", 232, StripTop + CaptionRow, 42, 11));
-        w.Add(new MenuWidget(engine, ParamId.DistortionCurve, 232, StripTop + 28, 42));
+        // The head: the letter, the filter, the level.
+        var x0 = 10f;
+        w.Add(new LabelWidget(section.ToString(), x0, top + 4, 24, 26, EditorTheme.Center, EditorTheme.HugeFont));
+        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.Slave), x0 + 28, top + 9, 44, 13, "SLAVE"));
+        w.Add(new KnobWidget(engine, ParameterTable.Section(section, SectionParam.Cutoff), x0 + 2, top + 40, 22, "CUT"));
+        w.Add(new KnobWidget(engine, ParameterTable.Section(section, SectionParam.Reso), x0 + 30, top + 40, 22, "RES"));
+        w.Add(new ChoiceButtonsWidget(engine, ParameterTable.Section(section, SectionParam.FilterType), x0, top + 66, 72, 12));
+        w.Add(new LabelWidget("LEVEL", x0, top + 82, 72, 9, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new FaderWidget(engine, ParameterTable.Section(section, SectionParam.Level), x0, top + 97, 56, vertical: false));
 
-        // EQ
-        Module(w, 282, 60, "EQ", engine, null);
-        w.Add(new KnobWidget(engine, ParamId.EqHigh, 298, StripTop + 26, 24, "HI"));
-        w.Add(new KnobWidget(engine, ParamId.EqLow, 298, StripTop + 66, 24, "LOW"));
+        // The stack display and the pitch-routing block.
+        w.Add(new StackWidget(engine, section, CardsX, top + 2, 608, 42));
+        var routeX = 704f;
+        w.Add(new LabelWidget("P1", routeX, top + 4, 14, 11, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P1FineRange), routeX + 14, top + 4, 22, 11, "FINE"));
+        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P1RouteAll), routeX + 38, top + 4, 22, 11, "ALL"));
+        w.Add(new LabelWidget("P2", routeX, top + 18, 14, 11, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P2FineRange), routeX + 14, top + 18, 22, 11, "FINE"));
+        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P2RouteAll), routeX + 38, top + 18, 22, 11, "ALL"));
+        w.Add(new LabelWidget("ROUTE", routeX, top + 32, 60, 10, EditorTheme.Center, EditorTheme.SmallFont, EditorTheme.TextDim));
 
-        // SPIN
-        Module(w, 346, 196, "SPIN", engine, ParamId.SpinOn);
-        Fader(w, engine, ParamId.SpinTime1, 366, "T1");
-        Fader(w, engine, ParamId.SpinTime2, 396, "T2");
-        Fader(w, engine, ParamId.SpinFine, 426, "FINE");
-        Fader(w, engine, ParamId.SpinFeedback, 456, "FB");
-        w.Add(new ToggleWidget(engine, ParamId.SpinLink, 486, StripTop + CaptionRow + 2, 40, 13, "LINK"));
-        w.Add(new KnobWidget(engine, ParamId.SpinMix, 494, StripTop + 52, 24, "MIX"));
-
-        // RESOCHORD
-        Module(w, 546, 206, "RESOCHORD", engine, ParamId.ResochordOn);
-        w.Add(new MenuWidget(engine, ParamId.ResochordChord, 552, StripTop + CaptionRow + 2, 92));
-        w.Add(new NumberWidget(engine, ParamId.ResochordFeedback, 588, StripTop + 38, 40, 12, "FB", 36));
-        w.Add(new NumberWidget(engine, ParamId.ResochordPitch, 588, StripTop + 54, 40, 12, "PITCH", 36));
-        w.Add(new NumberWidget(engine, ParamId.ResochordFine, 588, StripTop + 70, 40, 12, "FINE", 36));
-        w.Add(new LabelWidget("MOD", 552, StripTop + 86, 33, 14, EditorTheme.Right));
-        w.Add(new MenuWidget(engine, ParamId.ResochordModSource, 588, StripTop + 86, 40));
-        Fader(w, engine, ParamId.ResochordMix, 650, "MIX");
-        Fader(w, engine, ParamId.ResochordFeedbackFader, 680, "FB");
-        w.Add(new ToggleWidget(engine, ParamId.ResochordMidi, 706, StripTop + CaptionRow + 2, 40, 13, "MIDI"));
-        w.Add(new LabelWidget("SELECT", 706, StripTop + 40, 40, 11));
-        w.Add(new MenuWidget(engine, ParamId.ResochordChordSelect, 706, StripTop + 52, 40));
-
-        // REVERB
-        Module(w, 756, 152, "REVERB", engine, ParamId.ReverbOn);
-        w.Add(new MenuWidget(engine, ParamId.ReverbRoom, 762, StripTop + CaptionRow + 2, 86));
-        w.Add(new LabelWidget("ORDER", 762, StripTop + 38, 40, 11, EditorTheme.Left));
-        w.Add(new ChoiceButtonsWidget(engine, ParamId.ReverbOrder, 762, StripTop + 50, 62, 13));
-        w.Add(new ToggleWidget(engine, ParamId.ReverbFreeze, 762, StripTop + 68, 46, 13, "FREEZE"));
-        w.Add(new KnobWidget(engine, ParamId.ReverbSize, 822, StripTop + 60, 22, "SIZE"));
-        w.Add(new KnobWidget(engine, ParamId.ReverbDamping, 850, StripTop + 60, 22, "DAMP"));
-        Fader(w, engine, ParamId.ReverbMix, 884, "MIX");
-
-        // VOLUME
-        Module(w, 912, 84, "VOLUME", engine, null);
-        w.Add(new KnobWidget(engine, ParamId.OutputVolume, 916, StripTop + 24, 32));
-        w.Add(new KnobWidget(engine, ParamId.OutputWidth, 956, StripTop + 30, 24, "WIDTH", labelBelow: true));
-    }
-
-    private static void Module(List<Widget> w, float x, float width, string title, NoumenonEngine engine, ParamId? on)
-    {
-        w.Add(new FrameWidget(x, StripTop, width, StripHeight, null));
-        if (on is { } id)
-        {
-            w.Add(new ToggleWidget(engine, id, x + 6, StripTop + 4, 10, 10, "", ToggleStyle.Led));
-            w.Add(new LabelWidget(title, x + 18, StripTop + 2, width - 20, 13, EditorTheme.Left, EditorTheme.TitleFont));
-        }
-        else
-        {
-            w.Add(new LabelWidget(title, x + 8, StripTop + 2, width - 16, 13, EditorTheme.Left, EditorTheme.TitleFont));
-        }
-    }
-
-    private static void Fader(List<Widget> w, NoumenonEngine engine, ParamId id, float slotX, string label)
-    {
-        w.Add(new LabelWidget(label, slotX - 12, StripTop + CaptionRow, 32, 11));
-        w.Add(new FaderWidget(engine, id, slotX, StripTop + FaderTop, FaderLength));
-    }
-
-    private static void BuildSection(NoumenonEngine engine, List<Widget> w, SectionId section)
-    {
-        var isA = section == SectionId.A;
-        var frameX = isA ? 4f : 670f;
-        w.Add(new FrameWidget(frameX, SectionTop, 326, SectionHeight));
-        w.Add(new LabelWidget(section.ToString(), isA ? 10 : 958, SectionTop + 2, 30, 32, EditorTheme.Center, EditorTheme.HugeFont));
-
-        var slotsX = isA ? 58f : 728f;
-        var row1 = SectionTop + 4;
-        var row2 = SectionTop + 20;
+        // Six slot cards.
         for (var slot = 0; slot < ParameterTable.SlotsPerSection; slot++)
-        {
-            var x0 = slotsX + slot * SlotWidth;
-            w.Add(new ToggleWidget(engine, ParameterTable.Osc(section, slot, OscParam.P1Route), x0 + 2, row1, 30, 12, "ON"));
-            w.Add(new ToggleWidget(engine, ParameterTable.Osc(section, slot, OscParam.P2Route), x0 + 2, row2, 30, 12, "ON"));
-        }
+            BuildCard(engine, w, section, slot, CardsX + slot * CardStep, top + 48);
+    }
 
-        var fineX = isA ? 280f : 698f;
-        var allX = isA ? 306f : 672f;
-        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P1FineRange), fineX, row1, 22, 12, "FINE"));
-        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P1RouteAll), allX, row1, 22, 12, "ALL"));
-        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P2FineRange), fineX, row2, 22, 12, "FINE"));
-        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.P2RouteAll), allX, row2, 22, 12, "ALL"));
-        w.Add(new LabelWidget("P1", isA ? 40 : 946, row1, 16, 12, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("P2", isA ? 40 : 946, row2, 16, 12, EditorTheme.Center, EditorTheme.SmallFont));
-
-        var columnX = isA ? 10f : 952f;
-        w.Add(new KnobWidget(engine, ParameterTable.Section(section, SectionParam.Cutoff), columnX + 4, SectionTop + 50, 28, "CUTOFF"));
-        w.Add(new ToggleWidget(engine, ParameterTable.Section(section, SectionParam.Slave), columnX, SectionTop + 86, 36, 13, "SLAVE"));
-        w.Add(new KnobWidget(engine, ParameterTable.Section(section, SectionParam.Reso), columnX + 4, SectionTop + 116, 28, "RESO"));
-        w.Add(new ChoiceButtonsWidget(engine, ParameterTable.Section(section, SectionParam.FilterType), columnX, SectionTop + 150, 36, 44, null, vertical: true));
-
-        for (var slot = 0; slot < ParameterTable.SlotsPerSection; slot++)
-        {
-            var x0 = slotsX + slot * SlotWidth;
-            var index = slot;
-            w.Add(new WaveIconWidget(engine, section, slot, x0 + 1, SectionTop + 40, 32, 18));
-            w.Add(new KnobWidget(engine, () => IsNoise(engine, section, index) ? ParameterTable.Osc(section, index, OscParam.NoiseCutoff) : ParameterTable.Osc(section, index, OscParam.Shape), x0 + 7, SectionTop + 63, 20));
-            w.Add(new NumberWidget(engine, ParameterTable.Osc(section, slot, OscParam.Semitone), x0 + 1, SectionTop + 88, 32));
-            w.Add(new NumberWidget(engine, ParameterTable.Osc(section, slot, OscParam.Fine), x0 + 1, SectionTop + 102, 32));
-            w.Add(new NumberWidget(engine, ParameterTable.Osc(section, slot, OscParam.Trim), x0 + 1, SectionTop + 116, 32));
-            w.Add(new FaderWidget(engine, ParameterTable.Osc(section, slot, OscParam.Level), x0 + 13, SectionTop + 134, 140));
-        }
-
-        var levelX = isA ? 300f : 686f;
-        w.Add(new VerticalLabelWidget($"LEVEL {section}", isA ? 288 : 706, SectionTop + 150));
-        w.Add(new FaderWidget(engine, ParameterTable.Section(section, SectionParam.Level), levelX, SectionTop + 42, 230));
+    private static void BuildCard(NoumenonEngine engine, List<Widget> w, SectionId section, int slot, float x, float y)
+    {
+        var index = slot;
+        w.Add(new FrameWidget(x, y, CardWidth, 60, null, inset: true));
+        w.Add(new WaveIconWidget(engine, section, slot, x + 3, y + 3, 34, 14));
+        w.Add(new NumberWidget(engine, ParameterTable.Osc(section, slot, OscParam.Semitone), x + 40, y + 4, 32));
+        w.Add(new NumberWidget(engine, ParameterTable.Osc(section, slot, OscParam.Fine), x + 74, y + 4, 32));
+        w.Add(new FaderWidget(engine, ParameterTable.Osc(section, slot, OscParam.Level), x + 4, y + 27, 40, vertical: false));
+        w.Add(new KnobWidget(engine, () => IsNoise(engine, section, index) ? ParameterTable.Osc(section, index, OscParam.NoiseCutoff) : ParameterTable.Osc(section, index, OscParam.Shape), x + 62, y + 21, 18));
+        w.Add(new NumberWidget(engine, ParameterTable.Osc(section, slot, OscParam.Trim), x + 82, y + 24, 26));
+        w.Add(new ToggleWidget(engine, ParameterTable.Osc(section, slot, OscParam.P1Route), x + 4, y + 43, 24, 12, "P1"));
+        w.Add(new ToggleWidget(engine, ParameterTable.Osc(section, slot, OscParam.P2Route), x + 30, y + 43, 24, 12, "P2"));
+        w.Add(new LabelWidget($"{section}{slot + 1}", x + 58, y + 43, 48, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
     }
 
     private static bool IsNoise(NoumenonEngine engine, SectionId section, int slot) => engine.Parameters.GetInt(ParameterTable.Osc(section, slot, OscParam.Wave)) >= 6;
 
-    private static void BuildCentre(NoumenonEngine engine, List<Widget> w)
+    private static void BuildPitch(NoumenonEngine engine, List<Widget> w)
     {
         var inv = CultureInfo.InvariantCulture;
+        w.Add(new FrameWidget(4, PitchTop, SourceWidth, 34));
         for (var p = 0; p < ParameterTable.PitchFaderCount; p++)
         {
-            var y = SectionTop + 6 + p * 26;
+            var x0 = 10f + p * 380f;
+            var y = PitchTop + 6;
             var fader = p;
-            w.Add(new LabelWidget($"P{p + 1}", 338, y, 18, 13, EditorTheme.Center, EditorTheme.TitleFont));
-            w.Add(new FaderWidget(engine, ParameterTable.Pitch(p, PitchParam.Value), 358, y + 2, 150, vertical: false));
-            w.Add(new DisplayTextWidget(() => (fader == 0 ? engine.P1 : engine.P2).ToString("+0.0;-0.0;0.0", inv), 528, y, 44, 13, tooltip: $"P{p + 1} as the engine hears it: lane or fader, MIDI, bend, glide (semitones)"));
-            w.Add(new ToggleWidget(engine, ParameterTable.Pitch(p, PitchParam.Midi), 578, y, 34, 13, "MIDI"));
-            w.Add(new KnobWidget(engine, ParameterTable.Pitch(p, PitchParam.Glide), 616, y - 4, 20));
-            w.Add(new NumberWidget(engine, ParameterTable.Pitch(p, PitchParam.BendRange), 640, y, 26));
+            w.Add(new LabelWidget($"P{p + 1}", x0, y, 18, 13, EditorTheme.Center, EditorTheme.TitleFont));
+            w.Add(new FaderWidget(engine, ParameterTable.Pitch(p, PitchParam.Value), x0 + 22, y + 5, 150, vertical: false));
+            w.Add(new DisplayTextWidget(() => (fader == 0 ? engine.P1 : engine.P2).ToString("+0.0;-0.0;0.0", inv), x0 + 192, y, 44, 13, tooltip: $"P{p + 1} as the engine hears it: lane or fader, MIDI, bend, glide (semitones)"));
+            w.Add(new ToggleWidget(engine, ParameterTable.Pitch(p, PitchParam.Midi), x0 + 240, y, 34, 13, "MIDI"));
+            w.Add(new KnobWidget(engine, ParameterTable.Pitch(p, PitchParam.Glide), x0 + 282, y - 3, 18, "GLIDE", labelBelow: true, labelWidth: 34));
+            w.Add(new NumberWidget(engine, ParameterTable.Pitch(p, PitchParam.BendRange), x0 + 316, y, 28));
+            w.Add(new LabelWidget("BEND", x0 + 312, y + 15, 36, 11, EditorTheme.Center, EditorTheme.LabelFont, EditorTheme.Text));
         }
-
-        w.Add(new LabelWidget("GLIDE", 608, SectionTop + 58, 36, 11, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("BEND", 638, SectionTop + 58, 30, 11, EditorTheme.Center, EditorTheme.SmallFont));
-
-        w.Add(new KnobWidget(engine, ParamId.MixSumBalance, 346, SectionTop + 64, 26, "A+B", labelBelow: true));
-        w.Add(new FaderWidget(engine, ParamId.MixCrossfade, 386, SectionTop + 74, 194, vertical: false));
-        w.Add(new KnobWidget(engine, ParamId.MixRingLevel, 612, SectionTop + 64, 26, "A×B", labelBelow: true));
-
-        w.Add(new ScopeWidget(engine, 340, SectionTop + 108, 280, 300));
-        w.Add(new DisplayTextWidget(() => $"X {engine.Parameters.Get(ParamId.ScopePhaseX).ToString("0.0", inv)} ms   Y {engine.Parameters.Get(ParamId.ScopePhaseY).ToString("0.0", inv)} ms   zoom {engine.Parameters.Get(ParamId.ScopeZoom).ToString("0.00", inv)}×", 340, SectionTop + 412, 280, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
-        w.Add(new FaderWidget(engine, ParamId.ScopeZoom, 642, SectionTop + 116, 240));
-        w.Add(new LabelWidget("ZOOM", 626, SectionTop + 362, 52, 11));
-
-        w.Add(new FrameWidget(340, 574, 280, 82, "MOD WHEEL", inset: true));
-        w.Add(new LabelWidget("TARGET", 350, 591, 60, 11, EditorTheme.Left));
-        w.Add(new MenuWidget(engine, ParamId.WheelTarget, 350, 603, 150));
-        w.Add(new KnobWidget(engine, ParamId.WheelMin, 526, 600, 22, "MIN"));
-        w.Add(new KnobWidget(engine, ParamId.WheelMax, 566, 600, 22, "MAX"));
-        w.Add(new DisplayTextWidget(() => $"wheel {engine.Midi.Wheel.ToString("0.00", inv)}  bend {engine.Midi.Bend.ToString("+0.00;-0.00;0.00", inv)}  held {engine.Midi.HeldCount}", 350, 626, 200, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
-        w.Add(new LedWidget(() => engine.Midi.HeldCount > 0, 566, 629, 8, "GATE"));
     }
 
-    private static void BuildSampler(NoumenonEngine engine, IEditorHost host, List<Widget> w)
+    private static void BuildSample(NoumenonEngine engine, IEditorHost host, List<Widget> w)
     {
-        w.Add(new FrameWidget(4, BottomTop, 326, BottomHeight, "SAMPLER"));
-        w.Add(new WaveformWidget(engine, host, 12, BottomTop + 18, 200, 54));
-        w.Add(new KnobWidget(engine, ParamId.SamplerMaster, 14, BottomTop + 96, 26, "MASTER"));
-        w.Add(new LabelWidget("AMP", 56, BottomTop + 85, 20, 11));
-        w.Add(new FaderWidget(engine, ParamId.SamplerAmp, 62, BottomTop + 96, 60));
-        w.Add(new LabelWidget("DIR", 86, BottomTop + 85, 20, 11));
-        w.Add(new FaderWidget(engine, ParamId.SamplerDir, 92, BottomTop + 96, 60));
-        w.Add(new LabelWidget("SMP/IN", 110, BottomTop + 85, 32, 11));
-        w.Add(new FaderWidget(engine, ParamId.SamplerInputMix, 122, BottomTop + 96, 60));
-        w.Add(new KnobWidget(engine, ParamId.SamplerAmDepth, 152, BottomTop + 96, 22, "AM"));
-        w.Add(new LedWidget(() => engine.Midi.HeldCount > 0, 150, BottomTop + 150, 8, "GATE"));
+        var y0 = SampleTop + 2;
+        w.Add(new FrameWidget(4, SampleTop, SourceWidth, 64));
+        w.Add(new WaveformWidget(engine, host, 10, y0 + 2, 290, 58));
 
-        w.Add(new NumberWidget(engine, ParamId.SamplerSelect, 262, BottomTop + 18, 44, 12, "SELECT", 46));
-        w.Add(new NumberWidget(engine, ParamId.SamplerPitch, 262, BottomTop + 34, 44, 12, "PITCH", 46));
-        w.Add(new NumberWidget(engine, ParamId.SamplerFine, 262, BottomTop + 50, 44, 12, "FINE", 46));
-        w.Add(new LabelWidget("MOD", 214, BottomTop + 66, 44, 14, EditorTheme.Right));
-        w.Add(new MenuWidget(engine, ParamId.SamplerModSource, 262, BottomTop + 66, 44));
-        w.Add(new LabelWidget("MODE", 214, BottomTop + 84, 44, 14, EditorTheme.Right));
-        w.Add(new MenuWidget(engine, ParamId.SamplerMode, 262, BottomTop + 84, 44));
-        w.Add(new NumberWidget(engine, ParamId.SamplerLoopCrossfade, 262, BottomTop + 102, 44, 12, "XFADE", 46));
-        w.Add(new ToggleWidget(engine, ParamId.SamplerRetrigger, 218, BottomTop + 122, 44, 13, "RETRIG"));
-        w.Add(new ToggleWidget(engine, ParamId.SamplerStereo, 266, BottomTop + 122, 44, 13, "STEREO"));
-        w.Add(new TextButtonWidget("LOAD…", 218, BottomTop + 142, 44, 13, () => host.LoadSample(engine.Parameters.GetInt(ParamId.SamplerSelect)), tooltip: "Load a file into the selected key"));
-        w.Add(new TextButtonWidget("GATE", 266, BottomTop + 142, 44, 13, engine.Gate, tooltip: "Fire a MIDI gate: retrigger the sample, restart the lanes if set"));
+        w.Add(new NumberWidget(engine, ParamId.SamplerSelect, 344, y0 + 4, 40, 12, "SELECT", 38));
+        w.Add(new NumberWidget(engine, ParamId.SamplerPitch, 344, y0 + 19, 40, 12, "PITCH", 38));
+        w.Add(new NumberWidget(engine, ParamId.SamplerFine, 344, y0 + 34, 40, 12, "FINE", 38));
+        w.Add(new LabelWidget("MOD", 306, y0 + 49, 34, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new MenuWidget(engine, ParamId.SamplerModSource, 344, y0 + 49, 40, 12));
+
+        w.Add(new LabelWidget("MODE", 392, y0 + 4, 30, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new MenuWidget(engine, ParamId.SamplerMode, 426, y0 + 4, 50, 12));
+        w.Add(new NumberWidget(engine, ParamId.SamplerLoopCrossfade, 426, y0 + 19, 50, 12, "XFADE", 34));
+        w.Add(new ToggleWidget(engine, ParamId.SamplerRetrigger, 392, y0 + 35, 40, 12, "RETRIG"));
+        w.Add(new ToggleWidget(engine, ParamId.SamplerStereo, 436, y0 + 35, 40, 12, "STEREO"));
+        w.Add(new TextButtonWidget("LOAD…", 392, y0 + 49, 40, 12, () => host.LoadSample(engine.Parameters.GetInt(ParamId.SamplerSelect)), tooltip: "Load a file into the selected key"));
+        w.Add(new TextButtonWidget("GATE", 436, y0 + 49, 40, 12, engine.Gate, tooltip: "Fire a MIDI gate: retrigger the sample, restart the lanes if set"));
+
+        Bar(w, engine, ParamId.SamplerAmp, 512, y0 + 9, 56, "AMP", 24);
+        Bar(w, engine, ParamId.SamplerDir, 512, y0 + 27, 56, "DIR", 24);
+        Bar(w, engine, ParamId.SamplerInputMix, 512, y0 + 45, 56, "S/IN", 24);
+        w.Add(new KnobWidget(engine, ParamId.SamplerMaster, 598, y0 + 16, 24, "MASTER"));
+        w.Add(new KnobWidget(engine, ParamId.SamplerAmDepth, 644, y0 + 16, 24, "AM"));
+        w.Add(new LedWidget(() => engine.Midi.HeldCount > 0, 690, y0 + 24, 8, "GATE"));
+    }
+
+    // ---- The display and the combine ----
+
+    private static void BuildColumn(NoumenonEngine engine, List<Widget> w)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        w.Add(new FrameWidget(ColumnX, Top, ColumnWidth, 334));
+        w.Add(new ScopeWidget(engine, ColumnX + 4, Top + 4, ColumnWidth - 8, ColumnWidth - 8));
+        w.Add(new ChoiceButtonsWidget(engine, ParamId.ScopeMode, ColumnX + 4, Top + ColumnWidth, ColumnWidth - 8, 14, ["OUT", "A × B", "SPECTRUM"]));
+
+        var y = Top + ColumnWidth + 22;
+        w.Add(new LabelWidget("COMBINE", ColumnX + 8, y, 100, 12, EditorTheme.Left, EditorTheme.TitleFont, EditorTheme.TextDim));
+        w.Add(new KnobWidget(engine, ParamId.MixSumBalance, ColumnX + 8, y + 30, 22, "A+B"));
+        w.Add(new FaderWidget(engine, ParamId.MixCrossfade, ColumnX + 40, y + 36, 140, vertical: false));
+        w.Add(new KnobWidget(engine, ParamId.MixRingLevel, ColumnX + ColumnWidth - 30, y + 30, 22, "A×B"));
+        w.Add(new DisplayTextWidget(() => $"X {engine.Parameters.Get(ParamId.ScopePhaseX).ToString("0.0", inv)} ms  Y {engine.Parameters.Get(ParamId.ScopePhaseY).ToString("0.0", inv)} ms  zoom {engine.Parameters.Get(ParamId.ScopeZoom).ToString("0.00", inv)}×", ColumnX + 8, y + 66, 180, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
+        w.Add(new KnobWidget(engine, ParamId.ScopeZoom, ColumnX + ColumnWidth - 28, y + 63, 18, "ZOOM", labelWidth: 36));
+    }
+
+    // ---- The chain ----
+
+    private static void BuildChain(NoumenonEngine engine, List<Widget> w)
+    {
+        var t = ChainTop;
+
+        Module(w, engine, 4, 124, "FILTER", ParamId.MasterFilterOn);
+        w.Add(new KnobWidget(engine, ParamId.MasterFilterMorph, 14, t + 30, 26, "LP-HP"));
+        w.Add(new KnobWidget(engine, ParamId.MasterFilterMix, 16, t + 76, 22, "MIX"));
+        Bar(w, engine, ParamId.MasterFilterCutoff, 60, t + 32, 50, "CUT", 22);
+        Bar(w, engine, ParamId.MasterFilterReso, 60, t + 56, 50, "RES", 22);
+
+        Module(w, engine, 132, 112, "DIST", ParamId.DistortionOn);
+        Bar(w, engine, ParamId.DistortionMix, 180, t + 30, 46, "MIX", 36);
+        Bar(w, engine, ParamId.DistortionDrive, 180, t + 52, 46, "DRIVE", 36);
+        w.Add(new LabelWidget("CURVE", 140, t + 72, 36, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new MenuWidget(engine, ParamId.DistortionCurve, 180, t + 72, 52, 12));
+
+        Module(w, engine, 248, 66, "EQ", null);
+        w.Add(new KnobWidget(engine, ParamId.EqHigh, 270, t + 30, 22, "HI"));
+        w.Add(new KnobWidget(engine, ParamId.EqLow, 270, t + 70, 22, "LOW"));
+
+        Module(w, engine, 318, 166, "DRIFT", ParamId.SpinOn);
+        Bar(w, engine, ParamId.SpinTime1, 362, t + 26, 56, "T1", 30);
+        Bar(w, engine, ParamId.SpinTime2, 362, t + 44, 56, "T2", 30);
+        Bar(w, engine, ParamId.SpinFine, 362, t + 62, 56, "FINE", 30);
+        Bar(w, engine, ParamId.SpinFeedback, 362, t + 80, 56, "FB", 30);
+        w.Add(new ToggleWidget(engine, ParamId.SpinLink, 444, t + 3, 34, 12, "LINK"));
+        w.Add(new KnobWidget(engine, ParamId.SpinMix, 452, t + 40, 22, "MIX"));
+
+        Module(w, engine, 488, 184, "RESONATOR", ParamId.ResochordOn);
+        w.Add(new ToggleWidget(engine, ParamId.ResochordMidi, 630, t + 3, 36, 12, "MIDI"));
+        w.Add(new MenuWidget(engine, ParamId.ResochordChord, 496, t + 18, 100, 12));
+        w.Add(new LabelWidget("SEL", 600, t + 18, 28, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new MenuWidget(engine, ParamId.ResochordChordSelect, 632, t + 18, 34, 12));
+        w.Add(new NumberWidget(engine, ParamId.ResochordFeedback, 528, t + 34, 34, 12, "FB", 30));
+        w.Add(new NumberWidget(engine, ParamId.ResochordPitch, 600, t + 34, 34, 12, "PITCH", 36));
+        w.Add(new NumberWidget(engine, ParamId.ResochordFine, 528, t + 50, 34, 12, "FINE", 30));
+        w.Add(new LabelWidget("MOD", 564, t + 50, 32, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new MenuWidget(engine, ParamId.ResochordModSource, 600, t + 50, 34, 12));
+        Bar(w, engine, ParamId.ResochordMix, 528, t + 72, 40, "MIX", 30);
+        Bar(w, engine, ParamId.ResochordFeedbackFader, 600, t + 72, 40, "FB", 30);
+        w.Add(new ResonatorStripWidget(engine, 496, t + 86, 170, 22));
+
+        Module(w, engine, 676, 150, "REVERB", ParamId.ReverbOn);
+        w.Add(new MenuWidget(engine, ParamId.ReverbRoom, 684, t + 18, 84, 12));
+        w.Add(new ToggleWidget(engine, ParamId.ReverbFreeze, 772, t + 18, 48, 12, "FREEZE"));
+        w.Add(new LabelWidget("ORDER", 684, t + 34, 36, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new ChoiceButtonsWidget(engine, ParamId.ReverbOrder, 722, t + 34, 60, 12));
+        w.Add(new KnobWidget(engine, ParamId.ReverbSize, 690, t + 62, 22, "SIZE"));
+        w.Add(new KnobWidget(engine, ParamId.ReverbDamping, 728, t + 62, 22, "DAMP"));
+        w.Add(new KnobWidget(engine, ParamId.ReverbMix, 766, t + 62, 22, "MIX"));
+        w.Add(new DisplayTextWidget(() => engine.Parameters.GetInt(ParamId.ReverbOrder) == 0 ? "reverb → resonator" : "resonator → reverb", 684, t + 92, 134, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark, tooltip: "The order of the two: Pre puts the reverb first"));
+    }
+
+    private static void BuildOut(NoumenonEngine engine, List<Widget> w)
+    {
+        var t = ChainTop;
+        Module(w, engine, 834, 162, "OUT", null);
+        w.Add(new KnobWidget(engine, ParamId.OutputVolume, 842, t + 30, 28, "VOLUME"));
+        w.Add(new KnobWidget(engine, ParamId.OutputWidth, 884, t + 33, 22, "WIDTH"));
+        w.Add(new MeterWidget(() => engine.OutputPeakLeft, 914, t + 16, 76, 8, MeterScale.Peak, "L"));
+        w.Add(new MeterWidget(() => engine.OutputPeakRight, 914, t + 26, 76, 8, MeterScale.Peak, "R"));
+        w.Add(new MeterWidget(() => engine.LimiterReductionLowDb, 914, t + 40, 76, 8, MeterScale.Reduction, "LO"));
+        w.Add(new MeterWidget(() => engine.LimiterReductionHighDb, 914, t + 50, 76, 8, MeterScale.Reduction, "HI"));
+        w.Add(new LabelWidget("LIMITER", 914, t + 60, 76, 10, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new ToggleWidget(engine, ParamId.Mute, 842, t + 76, 48, 14, "MUTE"));
+        w.Add(new KnobWidget(engine, ParamId.PauseFade, 906, t + 78, 18, "FADE"));
+    }
+
+    // ---- The bottom strip ----
+
+    private static void BuildLanes(NoumenonEngine engine, List<Widget> w)
+    {
+        var t = BottomTop;
+        w.Add(new FrameWidget(4, t, 440, BottomHeight, "LANES"));
+        w.Add(new TextButtonWidget("RESTART", 12, t + 18, 56, 14, engine.Clock.RequestRestart, tooltip: "Restart every lane now (Space)"));
+        w.Add(new ToggleWidget(engine, ParamId.RestartMode, 72, t + 18, 42, 14, "MODE"));
+        w.Add(new ToggleWidget(engine, ParamId.RestartOnGate, 118, t + 18, 54, 14, "ON GATE"));
+        w.Add(new LabelWidget("SPEED", 178, t + 18, 40, 14, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new SpeedWidget(engine, 222, t + 18, 40, 14));
+        w.Add(new KnobWidget(engine, ParamId.SpeedMultiplier, 271, t + 16, 16, "MULT", labelBelow: true, labelWidth: 34));
+        w.Add(new TextButtonWidget("AUTO ALL", 300, t + 18, 44, 14, () => SetAllLanes(engine, LaneMode.Automated), tooltip: "Play every recorded loop"));
+        w.Add(new TextButtonWidget("STATIC ALL", 348, t + 18, 46, 14, () => SetAllLanes(engine, LaneMode.Static), tooltip: "Stop every loop; faders keep their set values"));
+        w.Add(new TextButtonWidget("CLEAR ALL", 398, t + 18, 40, 14, () => ClearLanes(engine), tooltip: "Forget every recorded loop"));
+        w.Add(new LaneOverviewWidget(engine, 12, t + 44, 424, 114));
+        w.Add(new DisplayTextWidget(() => LaneSummary(engine), 12, t + 159, 424, 12, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark, tooltip: "Lanes: faders that play themselves"));
     }
 
     private static void BuildTransport(NoumenonEngine engine, List<Widget> w)
     {
         var inv = CultureInfo.InvariantCulture;
-        w.Add(new FrameWidget(670, BottomTop, 326, BottomHeight, "TRANSPORT"));
-        w.Add(new TextButtonWidget("RESTART", 684, BottomTop + 20, 64, 16, engine.Clock.RequestRestart, tooltip: "Restart every lane now (Space)"));
-        w.Add(new ToggleWidget(engine, ParamId.RestartMode, 754, BottomTop + 20, 44, 16, "MODE"));
-        w.Add(new ToggleWidget(engine, ParamId.RestartOnGate, 804, BottomTop + 20, 52, 16, "ON GATE"));
-        w.Add(new LabelWidget("SPEED", 882, BottomTop + 10, 44, 11));
-        w.Add(new SpeedWidget(engine, 882, BottomTop + 22, 44, 14));
-        w.Add(new KnobWidget(engine, ParamId.SpeedMultiplier, 934, BottomTop + 18, 20));
-
-        w.Add(new TextButtonWidget("RANDOMIZE", 684, BottomTop + 48, 72, 16, engine.RequestRandomize, tooltip: "Randomize with the scope and amount (R)"));
-        w.Add(new MenuWidget(engine, ParamId.RandomizeScope, 762, BottomTop + 49, 70));
-        w.Add(new KnobWidget(engine, ParamId.RandomizeAmount, 842, BottomTop + 46, 22, "AMOUNT", labelBelow: true));
-        w.Add(new NumberWidget(engine, ParamId.RandomSeed, 714, BottomTop + 72, 42, 12, "SEED", 30));
-        w.Add(new ToggleWidget(engine, ParamId.Mute, 882, BottomTop + 48, 44, 16, "MUTE"));
-        w.Add(new ToggleWidget(engine, ParamId.Pause, 882, BottomTop + 70, 44, 16, "PAUSE"));
-        w.Add(new KnobWidget(engine, ParamId.PauseFade, 934, BottomTop + 74, 20, "FADE"));
-
-        w.Add(new DisplayTextWidget(() => LaneSummary(engine), 684, BottomTop + 96, 172, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark, tooltip: "Lanes: faders that play themselves"));
-        w.Add(new TextButtonWidget("AUTO ALL", 684, BottomTop + 116, 54, 14, () => SetAllLanes(engine, LaneMode.Automated), tooltip: "Play every recorded loop"));
-        w.Add(new TextButtonWidget("STATIC ALL", 742, BottomTop + 116, 58, 14, () => SetAllLanes(engine, LaneMode.Static), tooltip: "Stop every loop; faders keep their set values"));
-        w.Add(new TextButtonWidget("CLEAR ALL", 804, BottomTop + 116, 52, 14, () => ClearLanes(engine), tooltip: "Forget every recorded loop"));
-        w.Add(new DisplayTextWidget(() => $"{engine.HostSampleRate.ToString("0", inv)} Hz × {engine.Oversampling}  ·  {engine.LatencySamples} smp  ·  {engine.ActiveScale.Name}", 684, BottomTop + 140, 172, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
-
-        w.Add(new FrameWidget(866, BottomTop + 96, 122, 100, null, inset: true));
-        w.Add(new LabelWidget("NOUMENON", 866, BottomTop + 112, 122, 24, EditorTheme.Center, EditorTheme.BadgeFont));
-        w.Add(new LabelWidget("generative ambient loops", 866, BottomTop + 138, 122, 12, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new DisplayTextWidget(() => engine.Parameters.Get(ParamId.Mute) >= 0.5f ? "MUTED" : engine.PauseLevel <= 0f ? "PAUSED" : engine.PauseLevel < 1f ? "FADING" : engine.Clock.HostPlaying ? "PLAYING " + engine.Clock.HostTempo.ToString("0.#", inv) + " BPM" : "FREE RUN", 876, BottomTop + 160, 102, 14, font: EditorTheme.SmallValueFont));
+        var t = BottomTop;
+        w.Add(new FrameWidget(448, t, 300, BottomHeight, "TRANSPORT"));
+        w.Add(new TextButtonWidget("RANDOMIZE", 456, t + 18, 72, 14, engine.RequestRandomize, tooltip: "Randomize with the scope and amount (R)"));
+        w.Add(new MenuWidget(engine, ParamId.RandomizeScope, 532, t + 18, 76, 14));
+        w.Add(new KnobWidget(engine, ParamId.RandomizeAmount, 616, t + 16, 20, "AMOUNT", labelBelow: true));
+        w.Add(new NumberWidget(engine, ParamId.RandomSeed, 690, t + 19, 46, 12, "SEED", 34));
+        w.Add(new DisplayTextWidget(() => PlayState(engine, inv), 456, t + 50, 140, 14, tooltip: "The play state: free run, host play, fading, muted"));
+        w.Add(new DisplayTextWidget(() => $"{engine.HostSampleRate.ToString("0", inv)} Hz × {engine.Oversampling}  ·  {engine.LatencySamples} smp  ·  {engine.ActiveScale.Name}", 456, t + 70, 284, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
+        w.Add(new LabelWidget("Space restart · R randomize · M mute · Ctrl+Z undo", 456, t + 92, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new LabelWidget("Stack: drag a mark for pitch and level · wheel for semitones", 456, t + 106, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new LabelWidget("Bar: click the strip to arm, drag to record, release to play", 456, t + 120, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
     }
+
+    private static void BuildWheel(NoumenonEngine engine, List<Widget> w)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var t = BottomTop;
+        w.Add(new FrameWidget(752, t, 244, 80, "MOD WHEEL"));
+        w.Add(new LabelWidget("TARGET", 760, t + 18, 44, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new MenuWidget(engine, ParamId.WheelTarget, 804, t + 18, 120, 12));
+        w.Add(new KnobWidget(engine, ParamId.WheelMin, 932, t + 16, 20, "MIN", labelBelow: true));
+        w.Add(new KnobWidget(engine, ParamId.WheelMax, 964, t + 16, 20, "MAX", labelBelow: true));
+        w.Add(new DisplayTextWidget(() => $"wheel {engine.Midi.Wheel.ToString("0.00", inv)}  bend {engine.Midi.Bend.ToString("+0.00;-0.00;0.00", inv)}  held {engine.Midi.HeldCount}", 760, t + 52, 180, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
+        w.Add(new LedWidget(() => engine.Midi.HeldCount > 0, 950, t + 55, 8, "GATE"));
+    }
+
+    private static void BuildWordmark(NoumenonEngine engine, List<Widget> w)
+    {
+        var inv = CultureInfo.InvariantCulture;
+        var t = BottomTop + 84;
+        w.Add(new FrameWidget(752, t, 244, 90, null, inset: true));
+        w.Add(new LabelWidget("NOUMENON", 752, t + 12, 244, 24, EditorTheme.Center, EditorTheme.BadgeFont));
+        w.Add(new LabelWidget("generative ambient loops", 752, t + 38, 244, 12, EditorTheme.Center, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new DisplayTextWidget(() => PlayState(engine, inv), 764, t + 60, 220, 14, font: EditorTheme.SmallValueFont));
+    }
+
+    // ---- Helpers ----
+
+    private static void Module(List<Widget> w, NoumenonEngine engine, float x, float width, string title, ParamId? on)
+    {
+        w.Add(new FrameWidget(x, ChainTop, width, ChainHeight));
+        if (on is { } id)
+        {
+            w.Add(new ToggleWidget(engine, id, x + 6, ChainTop + 4, 10, 10, "", ToggleStyle.Led));
+            w.Add(new LabelWidget(title, x + 18, ChainTop + 2, width - 20, 13, EditorTheme.Left, EditorTheme.TitleFont, EditorTheme.TextDim));
+        }
+        else
+        {
+            w.Add(new LabelWidget(title, x + 8, ChainTop + 2, width - 16, 13, EditorTheme.Left, EditorTheme.TitleFont, EditorTheme.TextDim));
+        }
+    }
+
+    /// <summary>A horizontal bar with its caption to the left; <paramref name="y"/> is the top of the bar's track.</summary>
+    private static void Bar(List<Widget> w, NoumenonEngine engine, ParamId id, float x, float y, float length, string label, float labelWidth)
+    {
+        w.Add(new LabelWidget(label, x - labelWidth - 2f, y - 4f, labelWidth, 13f, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new FaderWidget(engine, id, x, y, length, vertical: false));
+    }
+
+    private static string PlayState(NoumenonEngine engine, CultureInfo inv) =>
+        engine.FadeLevel <= 0f ? "MUTED"
+        : engine.FadeLevel < 1f ? "FADING"
+        : engine.Clock.HostPlaying ? "PLAYING " + engine.Clock.HostTempo.ToString("0.#", inv) + " BPM"
+        : "FREE RUN";
 
     private static string LaneSummary(NoumenonEngine engine)
     {

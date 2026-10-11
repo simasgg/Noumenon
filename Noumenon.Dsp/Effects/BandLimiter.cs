@@ -23,6 +23,7 @@ public enum LimiterSpeed
 public sealed class BandLimiter
 {
     private const float SmoothSeconds = 0.02f;
+    private const float MeterHoldSeconds = 0.3f;
     private const float ButterworthQ = 0.70710678f;
 
     private static readonly float[] ReleaseSeconds = [0.03f, 0.15f, 0.6f];
@@ -39,6 +40,9 @@ public sealed class BandLimiter
     private float lowEnvelope;
     private float highEnvelope;
     private float releaseCoeff;
+    private float meterCoeff;
+    private float lowReduction = 1f;
+    private float highReduction = 1f;
     private LimiterSpeed speed = LimiterSpeed.Medium;
     private bool wasIdle = true;
 
@@ -48,6 +52,11 @@ public sealed class BandLimiter
         lowThreshold.Snap(DspHelper.DbToLinear(-6f));
         highThreshold.Snap(DspHelper.DbToLinear(-6f));
     }
+
+    /// <summary>The gain the low band is pulled down by right now, 1 = none, held about 300 ms for a meter; written on the audio thread, read anywhere.</summary>
+    public float LowReduction => lowReduction;
+
+    public float HighReduction => highReduction;
 
     public void SetEnabled(bool enabled) => on.SetEnabled(enabled);
 
@@ -82,6 +91,7 @@ public sealed class BandLimiter
         lowThreshold.SetTime(this.sampleRate, SmoothSeconds);
         highThreshold.SetTime(this.sampleRate, SmoothSeconds);
         on.Prepare(this.sampleRate);
+        meterCoeff = 1f - MathF.Exp(-1f / (MeterHoldSeconds * (float)this.sampleRate));
         SetSpeed(speed);
         DesignCrossover();
     }
@@ -102,6 +112,8 @@ public sealed class BandLimiter
         if (on.IsIdle)
         {
             wasIdle = true;
+            lowReduction = 1f;
+            highReduction = 1f;
             return;
         }
 
@@ -125,21 +137,31 @@ public sealed class BandLimiter
 
         var lowPeak = MathF.Max(MathF.Abs(lowLeft), MathF.Abs(lowRight));
         lowEnvelope = lowPeak > lowEnvelope ? lowPeak : DspHelper.Undenormalize(lowEnvelope * releaseCoeff);
+        var lowReduce = 1f;
         if (lowEnvelope > lowThr)
         {
-            var reduce = lowThr / lowEnvelope;
-            lowLeft *= reduce;
-            lowRight *= reduce;
+            lowReduce = lowThr / lowEnvelope;
+            lowLeft *= lowReduce;
+            lowRight *= lowReduce;
         }
+
+        lowReduction += (1f - lowReduction) * meterCoeff;
+        if (lowReduce < lowReduction)
+            lowReduction = lowReduce;
 
         var highPeak = MathF.Max(MathF.Abs(highLeft), MathF.Abs(highRight));
         highEnvelope = highPeak > highEnvelope ? highPeak : DspHelper.Undenormalize(highEnvelope * releaseCoeff);
+        var highReduce = 1f;
         if (highEnvelope > highThr)
         {
-            var reduce = highThr / highEnvelope;
-            highLeft *= reduce;
-            highRight *= reduce;
+            highReduce = highThr / highEnvelope;
+            highLeft *= highReduce;
+            highRight *= highReduce;
         }
+
+        highReduction += (1f - highReduction) * meterCoeff;
+        if (highReduce < highReduction)
+            highReduction = highReduce;
 
         var w = on.Next();
         l += (lowLeft + highLeft - l) * w;

@@ -73,7 +73,7 @@ public sealed class DisplayTextWidget : Widget
         this.onClick = onClick;
         this.tooltip = tooltip;
         this.font = font ?? EditorTheme.ValueFont;
-        this.color = color ?? EditorTheme.Trace;
+        this.color = color ?? EditorTheme.Readout;
         this.format = format ?? EditorTheme.Center;
         Bounds = new RectangleF(x, y, width, height);
     }

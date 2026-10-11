@@ -6,8 +6,8 @@ namespace Noumenon.Ui.Widgets;
 /// <summary>
 /// A numeric readout bound to one parameter, as MF shows pitches and fine offsets: drag up or
 /// down to change it (whole steps for integers, Shift for fine), the wheel steps, a double-click
-/// types an exact value. Shows the resolved value, so a lane on a pitch readout is visible, and
-/// takes a caption to its left when asked.
+/// restores the default and the right-click menu types an exact value. Shows the resolved value,
+/// so a lane on a pitch readout is visible, and takes a caption to its left when asked.
 /// </summary>
 public sealed class NumberWidget : Widget
 {
@@ -30,7 +30,7 @@ public sealed class NumberWidget : Widget
         Bounds = new RectangleF(x - this.labelWidth, y, width + this.labelWidth, height);
     }
 
-    public override string? Tooltip => $"{binding.Info.Name}: {binding.ValueText}{(binding.Lane is null ? "" : "\n" + binding.LaneText + "\nright-click: lane menu")}\ndrag: change · double-click: type a value";
+    public override string? Tooltip => $"{binding.Info.Name}: {binding.ValueText}{(binding.Lane is null ? "" : "\n" + binding.LaneText)}\ndrag: change · wheel: step · double-click: default\nright-click: {(binding.Lane is null ? "type a value" : "lane menu, type a value")}";
 
     private RectangleF Box => new(Bounds.X + labelWidth, Bounds.Y, Bounds.Width - labelWidth, Bounds.Height);
 
@@ -41,7 +41,7 @@ public sealed class NumberWidget : Widget
 
         var box = Box;
         EditorDraw.Display(g, box);
-        EditorDraw.Text(g, binding.ResolvedText, RectangleF.Inflate(box, -2f, 0f), EditorTheme.SmallValueFont, Hot || dragging ? EditorTheme.TextLight : EditorTheme.Trace, EditorTheme.Center);
+        EditorDraw.Text(g, binding.ResolvedText, RectangleF.Inflate(box, -2f, 0f), EditorTheme.SmallValueFont, Hot || dragging ? EditorTheme.TextLight : EditorTheme.Readout, EditorTheme.Center);
     }
 
     public override bool Update()
@@ -59,9 +59,9 @@ public sealed class NumberWidget : Widget
     {
         if (button == MouseButtons.Right)
         {
-            if (binding.Lane is not null)
-                ShowMenu(LaneMenu.Build(binding), p);
-
+            var menu = LaneMenu.Build(binding);
+            menu.Items.Insert(menu.Items.Count - 1, new ToolStripMenuItem("Type a value…", null, (_, _) => TypeValue()));
+            ShowMenu(menu, p);
             return;
         }
 
@@ -70,10 +70,7 @@ public sealed class NumberWidget : Widget
 
         if (clicks >= 2)
         {
-            var typed = ValuePrompt.Show(Surface, binding.Info, binding.Value);
-            if (typed is { } value)
-                binding.Value = value;
-
+            binding.Reset();
             Invalidate();
             return;
         }
@@ -115,6 +112,15 @@ public sealed class NumberWidget : Widget
     public override void MouseWheel(PointF p, int delta)
     {
         Commit(() => binding.Step(delta > 0 ? 1 : -1));
+        Invalidate();
+    }
+
+    private void TypeValue()
+    {
+        var typed = ValuePrompt.Show(Surface, binding.Info, binding.Value);
+        if (typed is { } value)
+            Commit(() => binding.Value = value);
+
         Invalidate();
     }
 }

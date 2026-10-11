@@ -121,6 +121,7 @@ public static class ParameterTable
     public static readonly IReadOnlyList<string> RootNotes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     public static readonly IReadOnlyList<string> EngineRates = ["1x", "2x"];
     public static readonly IReadOnlyList<string> LfoShapes = ["Sine", "Triangle", "Saw", "Square", "S&H", "Smooth Random", "Drift"];
+    public static readonly IReadOnlyList<string> ScopeModes = ["Output", "Sections", "Spectrum"];
     public static readonly IReadOnlyList<string> MatrixSources = ["None", "P1", "P2", "LFO 1", "LFO 2", "LFO 3", "Env Follower", "Velocity", "Aftertouch", "Mod Wheel", "CC", "Macro 1", "Macro 2", "Macro 3", "Macro 4"];
 
     // The init patch's oscillator voicing: a low root with fifths and octaves in A, the same notes a
@@ -264,32 +265,32 @@ public static class ParameterTable
         rows.Add(Linear(ParamId.EqHigh, ParamGroup.Eq, "EQ High", "EQ Hi", -12f, 12f, 0f, Units.Decibels));
         rows.Add(Linear(ParamId.EqLow, ParamGroup.Eq, "EQ Low", "EQ Low", -12f, 12f, 0f, Units.Decibels));
 
-        rows.Add(Toggle(ParamId.SpinOn, ParamGroup.Spin, "Spin On", "Spin On", true));
-        rows.Add(Log(ParamId.SpinTime1, ParamGroup.Spin, "Spin Time 1", "Spin T1", 0.1f, 500f, 120f, Units.Milliseconds, ParamFlags.Lane));
-        rows.Add(Log(ParamId.SpinTime2, ParamGroup.Spin, "Spin Time 2", "Spin T2", 0.1f, 500f, 180f, Units.Milliseconds, ParamFlags.Lane));
-        rows.Add(Linear(ParamId.SpinFine, ParamGroup.Spin, "Spin Fine", "Spin Fin", -1f, 1f, 0f, Units.Milliseconds, ParamFlags.Lane));
-        rows.Add(Linear(ParamId.SpinFeedback, ParamGroup.Spin, "Spin Feedback", "Spin FB", 0f, 0.95f, 0.35f, Units.None, ParamFlags.Lane));
-        rows.Add(Toggle(ParamId.SpinLink, ParamGroup.Spin, "Spin Link", "Spin Lnk", false));
-        rows.Add(Linear(ParamId.SpinMix, ParamGroup.Spin, "Spin Mix", "Spin Mix", 0f, 1f, 1f, Units.None, ParamFlags.Addition));   // 1 = MF: the signal passes through the delay
+        rows.Add(Toggle(ParamId.SpinOn, ParamGroup.Spin, "Drift On", "Drift On", true));
+        rows.Add(Log(ParamId.SpinTime1, ParamGroup.Spin, "Drift Time 1", "Drift T1", 0.1f, 500f, 120f, Units.Milliseconds, ParamFlags.Lane));
+        rows.Add(Log(ParamId.SpinTime2, ParamGroup.Spin, "Drift Time 2", "Drift T2", 0.1f, 500f, 180f, Units.Milliseconds, ParamFlags.Lane));
+        rows.Add(Linear(ParamId.SpinFine, ParamGroup.Spin, "Drift Fine", "Drift Fn", -1f, 1f, 0f, Units.Milliseconds, ParamFlags.Lane));
+        rows.Add(Linear(ParamId.SpinFeedback, ParamGroup.Spin, "Drift Feedback", "Drift FB", 0f, 0.95f, 0.35f, Units.None, ParamFlags.Lane));
+        rows.Add(Toggle(ParamId.SpinLink, ParamGroup.Spin, "Drift Link", "Drift Lk", false));
+        rows.Add(Linear(ParamId.SpinMix, ParamGroup.Spin, "Drift Mix", "DriftMix", 0f, 1f, 1f, Units.None, ParamFlags.Addition));   // 1 = MF: the signal passes through the delay
 
-        rows.Add(Toggle(ParamId.ResochordOn, ParamGroup.Resochord, "Resochord On", "Rc On", true));
-        rows.Add(Choice(ParamId.ResochordChord, ParamGroup.Resochord, "Resochord Chord", "Rc Chord", ResochordChords, 0));
-        rows.Add(Linear(ParamId.ResochordFeedback, ParamGroup.Resochord, "Resochord Feedback", "Rc FB", 0f, 0.99f, 0.7f, Units.None));
-        rows.Add(Linear(ParamId.ResochordFeedbackFader, ParamGroup.Resochord, "Resochord Feedback Fader", "Rc FBFdr", 0f, 0.99f, 0f, Units.None, ParamFlags.Lane));
-        rows.Add(Integer(ParamId.ResochordPitch, ParamGroup.Resochord, "Resochord Pitch", "Rc Pitch", -24, 24, 0, Units.Semitones));
-        rows.Add(Linear(ParamId.ResochordFine, ParamGroup.Resochord, "Resochord Fine", "Rc Fine", -100f, 100f, 0f, Units.Cents));
-        rows.Add(Choice(ParamId.ResochordModSource, ParamGroup.Resochord, "Resochord Mod Source", "Rc Mod", ModSources, 0));
-        rows.Add(Linear(ParamId.ResochordMix, ParamGroup.Resochord, "Resochord Mix", "Rc Mix", 0f, 1f, 0.3f, Units.None, ParamFlags.Lane));
-        rows.Add(Toggle(ParamId.ResochordMidi, ParamGroup.Resochord, "Resochord MIDI", "Rc MIDI", false));
-        rows.Add(Choice(ParamId.ResochordChordSelect, ParamGroup.Resochord, "Resochord Chord Select", "Rc ChSel", ChordSelectSources, 0));
+        rows.Add(Toggle(ParamId.ResochordOn, ParamGroup.Resochord, "Resonator On", "Rs On", true));
+        rows.Add(Choice(ParamId.ResochordChord, ParamGroup.Resochord, "Resonator Chord", "Rs Chord", ResochordChords, 0));
+        rows.Add(Linear(ParamId.ResochordFeedback, ParamGroup.Resochord, "Resonator Feedback", "Rs FB", 0f, 0.99f, 0.7f, Units.None));
+        rows.Add(Linear(ParamId.ResochordFeedbackFader, ParamGroup.Resochord, "Resonator Feedback Fader", "Rs FBFdr", 0f, 0.99f, 0f, Units.None, ParamFlags.Lane));
+        rows.Add(Integer(ParamId.ResochordPitch, ParamGroup.Resochord, "Resonator Pitch", "Rs Pitch", -24, 24, 0, Units.Semitones));
+        rows.Add(Linear(ParamId.ResochordFine, ParamGroup.Resochord, "Resonator Fine", "Rs Fine", -100f, 100f, 0f, Units.Cents));
+        rows.Add(Choice(ParamId.ResochordModSource, ParamGroup.Resochord, "Resonator Mod Source", "Rs Mod", ModSources, 0));
+        rows.Add(Linear(ParamId.ResochordMix, ParamGroup.Resochord, "Resonator Mix", "Rs Mix", 0f, 1f, 0.3f, Units.None, ParamFlags.Lane));
+        rows.Add(Toggle(ParamId.ResochordMidi, ParamGroup.Resochord, "Resonator MIDI", "Rs MIDI", false));
+        rows.Add(Choice(ParamId.ResochordChordSelect, ParamGroup.Resochord, "Resonator Chord Select", "Rs ChSel", ChordSelectSources, 0));
         for (var v = 0; v < ResoVoiceCount; v++)
         {
             var tag = $"Rc{v + 1}";
-            rows.Add(Integer(ResoVoice(v, ResoVoiceParam.Note), ParamGroup.Resochord, $"Resochord Voice {v + 1} Note", $"{tag} Note", 0, 127, DefaultResoNote[v], Units.Note));
-            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Feedback), ParamGroup.Resochord, $"Resochord Voice {v + 1} Feedback", $"{tag} FB", -0.99f, 0.99f, 0.9f, Units.None));
-            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Damping), ParamGroup.Resochord, $"Resochord Voice {v + 1} Damping", $"{tag} Damp", 0f, 1f, 0.3f, Units.None));
-            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Level), ParamGroup.Resochord, $"Resochord Voice {v + 1} Level", $"{tag} Lvl", 0f, 1f, 0.8f, Units.None));
-            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Pan), ParamGroup.Resochord, $"Resochord Voice {v + 1} Pan", $"{tag} Pan", -1f, 1f, DefaultResoPan[v], Units.None));
+            rows.Add(Integer(ResoVoice(v, ResoVoiceParam.Note), ParamGroup.Resochord, $"Resonator Voice {v + 1} Note", $"{tag} Note", 0, 127, DefaultResoNote[v], Units.Note));
+            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Feedback), ParamGroup.Resochord, $"Resonator Voice {v + 1} Feedback", $"{tag} FB", -0.99f, 0.99f, 0.9f, Units.None));
+            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Damping), ParamGroup.Resochord, $"Resonator Voice {v + 1} Damping", $"{tag} Damp", 0f, 1f, 0.3f, Units.None));
+            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Level), ParamGroup.Resochord, $"Resonator Voice {v + 1} Level", $"{tag} Lvl", 0f, 1f, 0.8f, Units.None));
+            rows.Add(Linear(ResoVoice(v, ResoVoiceParam.Pan), ParamGroup.Resochord, $"Resonator Voice {v + 1} Pan", $"{tag} Pan", -1f, 1f, DefaultResoPan[v], Units.None));
         }
 
         rows.Add(Toggle(ParamId.ReverbOn, ParamGroup.Reverb, "Reverb On", "Rv On", true));
@@ -371,9 +372,11 @@ public static class ParameterTable
             rows.Add(Linear(ModSlot(i, ModSlotParam.Depth), ParamGroup.ModMatrix, $"Mod Slot {i + 1} Depth", $"{tag} Dep", -1f, 1f, 0f, Units.None, ParamFlags.Addition));
         }
 
-        // Pause: a mute that fades, over Pause Fade seconds each way.
+        // Mute fades over Mute Fade seconds each way (zero leaves the 20 ms glide). Pause is a second
+        // switch into the same fade, kept for hosts that automate it apart from Mute; the panel shows Mute only.
         rows.Add(Toggle(ParamId.Pause, ParamGroup.Transport, "Pause", "Pause", false, ParamFlags.Addition));
-        rows.Add(Linear(ParamId.PauseFade, ParamGroup.Transport, "Pause Fade", "Fade", 0f, 10f, 0f, Units.Seconds, ParamFlags.Addition));
+        rows.Add(Linear(ParamId.PauseFade, ParamGroup.Transport, "Mute Fade", "MuteFade", 0f, 10f, 0f, Units.Seconds, ParamFlags.Addition));
+        rows.Add(Choice(ParamId.ScopeMode, ParamGroup.Scope, "Scope Mode", "ScpMode", ScopeModes, 0, ParamFlags.Addition));
 
         if (rows.Count != ids.Length)
             throw new InvalidOperationException($"ParameterTable has {rows.Count} rows but ParamId has {ids.Length} members.");
