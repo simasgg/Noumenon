@@ -12,8 +12,8 @@ using Noumenon.Standalone.Audio;
 using Noumenon.Standalone.Developer;
 using Noumenon.Standalone.Dialogs;
 using Noumenon.Standalone.Input;
-using Noumenon.Standalone.Presets;
 using Noumenon.Ui;
+using Noumenon.Ui.Hosting;
 
 namespace Noumenon.Standalone;
 
@@ -882,7 +882,7 @@ internal sealed class MainForm : Form, IEditorHost
     private void SavePreset(bool forceDialog)
     {
         var path = currentPresetPath;
-        var isFactory = path is not null && library.FactoryFolder is not null && path.StartsWith(library.FactoryFolder, StringComparison.OrdinalIgnoreCase);
+        var isFactory = library.IsFactory(path);
         if (forceDialog || path is null || isFactory)
         {
             Directory.CreateDirectory(library.UserFolder);

@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Drives the VST2 wrapper the way a host does — parameters, audio blocks, MIDI events, the
+         state chunk, the editor window — in process, without a DAW. x64 and Windows because the
+         plugin is; VST.NET's build targets are left out so this project is not "published" as a
+         plugin itself, and its assemblies are referenced from the package folder instead. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Platforms>x64</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <PackageReference Include="VST.NET2-Plugin" Version="2.1.10" ExcludeAssets="build" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Jacobi.Vst.Core">
+      <HintPath>$(NuGetPackageRoot)vst.net2-plugin\2.1.10\lib\net10.0-windows\x64\Jacobi.Vst.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="Jacobi.Vst.Plugin.Framework">
+      <HintPath>$(NuGetPackageRoot)vst.net2-plugin\2.1.10\lib\net10.0-windows\x64\Jacobi.Vst.Plugin.Framework.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Noumenon.Engine\Noumenon.Engine.csproj" />
+    <ProjectReference Include="..\Noumenon.Vst2\Noumenon.Vst2.csproj" />
+  </ItemGroup>
+
+</Project>

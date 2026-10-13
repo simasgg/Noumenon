@@ -4,8 +4,21 @@
   </Configurations>
   <Project Path="Noumenon.Dsp/Noumenon.Dsp.csproj" />
   <Project Path="Noumenon.Engine/Noumenon.Engine.csproj" />
-  <Project Path="Noumenon.Ui/Noumenon.Ui.csproj" />
-  <Project Path="Noumenon.Standalone/Noumenon.Standalone.csproj" />
+  <Project Path="Noumenon.Ui/Noumenon.Ui.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="Noumenon.Standalone/Noumenon.Standalone.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="Noumenon.Vst2/Noumenon.Vst2.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="Noumenon.Vst2.Fx/NoumenonFx.Vst2.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
   <Project Path="Noumenon.TestHarness/Noumenon.TestHarness.csproj" />
   <Project Path="Noumenon.Tests/Noumenon.Tests.csproj" />
+  <Project Path="Noumenon.Vst2.Tests/Noumenon.Vst2.Tests.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
 </Solution>

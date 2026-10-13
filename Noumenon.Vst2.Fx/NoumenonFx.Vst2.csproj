@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The VST2 wrapper, effect identity ("Noumenon FX"): the Noumenon.Vst2 sources compiled a
+         second time with NOUMENON_FX defined, as their own assembly, so a host can load both
+         plugins side by side. Two audio inputs feed Samp↔In — FL Studio sends no audio into
+         generators, so this is how a DAW track reaches the instrument there. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Platforms>x64</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>NoumenonFx.Vst2</AssemblyName>
+    <RootNamespace>Noumenon.Vst2</RootNamespace>
+    <DefineConstants>$(DefineConstants);NOUMENON_FX</DefineConstants>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+
+    <Version>0.1.0</Version>
+    <Authors>Noumenon</Authors>
+    <Company>Noumenon</Company>
+    <Product>Noumenon FX</Product>
+    <Description>Noumenon FX - the instrument as an effect with audio input (VST2 via VST.NET).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Noumenon.Vst2\**\*.cs" Exclude="..\Noumenon.Vst2\bin\**;..\Noumenon.Vst2\obj\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="VST.NET2-Plugin" Version="2.1.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Noumenon.Engine\Noumenon.Engine.csproj" />
+    <ProjectReference Include="..\Noumenon.Ui\Noumenon.Ui.csproj" />
+  </ItemGroup>
+
+  <Import Project="..\Noumenon.Vst2\Deploy.targets" />
+
+</Project>

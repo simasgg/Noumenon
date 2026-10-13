@@ -1,0 +1,25 @@
+<Project>
+
+  <!-- VST.NET's DeployVstNet target (from the package) runs "vstnet publish" after every build and
+       writes the folder a host loads to $(OutDir)deploy: the native bridge renamed to
+       <AssemblyName>.dll, this assembly as <AssemblyName>.net.vst2, every dependency and the
+       runtimeconfig. These two targets complete that folder. Both identity projects import this. -->
+
+  <!-- Debug builds carry the symbols so breakpoints bind when a host loads from deploy. -->
+  <Target Name="CopyPdbsToDeploy" AfterTargets="DeployVstNet" Condition="'$(Configuration)' == 'Debug'">
+    <ItemGroup>
+      <_DeployPdb Include="$(OutDir)*.pdb" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_DeployPdb)" DestinationFolder="$(OutDir)deploy" SkipUnchangedFiles="true" />
+  </Target>
+
+  <!-- The factory presets ride along as deploy\content\presets, so the plugin finds them in an
+       installed layout as well as up the tree from the build output. -->
+  <Target Name="CopyContentToDeploy" AfterTargets="DeployVstNet">
+    <ItemGroup>
+      <_FactoryContent Include="$(MSBuildThisFileDirectory)..\content\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_FactoryContent)" DestinationFiles="@(_FactoryContent->'$(OutDir)deploy\content\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -11,6 +11,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Media Foundation decoding (MP3/AAC/WMA/FLAC samples) lives in NAudio.Wasapi; every Windows
+         host registers it through Hosting/MediaFoundationDecoding, so it is referenced here once. -->
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Noumenon.Engine\Noumenon.Engine.csproj" />
   </ItemGroup>
 

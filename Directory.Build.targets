@@ -1,0 +1,15 @@
+<Project>
+
+  <!-- VST.NET's DeployVstNet target (VST.NET2-Plugin's VstNetDeploy.targets) builds the loadable
+       plugin folder by running vstnet.exe — an apphost, which finds the runtime only through a
+       machine-wide .NET install or DOTNET_ROOT. This machine has a user-local SDK and neither, so
+       the same tool is run through the dotnet muxer that is running this build (the SDK's own
+       dotnet.exe as a fallback). Imported after the package targets, so this definition wins; it
+       only matters to the two Noumenon.Vst2 projects. -->
+  <PropertyGroup Condition="'$(VstNetCliExe)' != ''">
+    <_NoumenonDotnetHost>$(DOTNET_HOST_PATH)</_NoumenonDotnetHost>
+    <_NoumenonDotnetHost Condition="'$(_NoumenonDotnetHost)' == '' and '$(NetCoreRoot)' != ''">$(NetCoreRoot)dotnet.exe</_NoumenonDotnetHost>
+    <VstNetCliExe Condition="'$(_NoumenonDotnetHost)' != '' and Exists('$(NuGetPackageRoot)vst.net2-plugin\2.1.10\tools\net10.0-windows\vstnet.dll')">"$(_NoumenonDotnetHost)" "$(NuGetPackageRoot)vst.net2-plugin\2.1.10\tools\net10.0-windows\vstnet.dll"</VstNetCliExe>
+  </PropertyGroup>
+
+</Project>
