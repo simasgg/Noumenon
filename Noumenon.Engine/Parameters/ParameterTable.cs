@@ -142,6 +142,33 @@ public static class ParameterTable
 
     public static ParamInfo Get(ParamId id) => All[(int)id];
 
+    /// <summary>The group's name where a plugin host lists parameters (VST2 categories, VST3 units), in the panel's module names.</summary>
+    public static string GroupName(ParamGroup group) => group switch
+    {
+        ParamGroup.OscillatorA => "Oscillators A",
+        ParamGroup.OscillatorB => "Oscillators B",
+        ParamGroup.SectionA => "Section A",
+        ParamGroup.SectionB => "Section B",
+        ParamGroup.Pitch => "Pitch",
+        ParamGroup.Mix => "Mix",
+        ParamGroup.Sampler => "Sampler",
+        ParamGroup.MasterFilter => "Master Filter",
+        ParamGroup.Distortion => "Distortion",
+        ParamGroup.Eq => "EQ",
+        ParamGroup.Spin => "Drift",
+        ParamGroup.Resochord => "Resonator",
+        ParamGroup.Reverb => "Reverb",
+        ParamGroup.Output => "Output",
+        ParamGroup.Scope => "Scope",
+        ParamGroup.Post => "Post",
+        ParamGroup.Transport => "Transport",
+        ParamGroup.PlayMode => "Play Mode",
+        ParamGroup.ModWheel => "Mod Wheel",
+        ParamGroup.Global => "Global",
+        ParamGroup.ModMatrix => "Mod Matrix",
+        _ => group.ToString(),
+    };
+
     public static ParamInfo? Find(string name)
     {
         foreach (var info in All)

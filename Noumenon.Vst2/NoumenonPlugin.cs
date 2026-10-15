@@ -28,10 +28,11 @@ internal sealed class NoumenonPlugin : VstPluginWithServices, IVstPlugin
         MediaFoundationDecoding.Register();
         Session = new PluginSession();
         Parameters = new PluginParameters(Session.Engine);
+        Session.Parameters = Parameters;
         Programs = new PluginPrograms(Parameters);
-        State = new PluginState(Session, Parameters);
+        State = new PluginState(Session);
         Audio = new AudioProcessor(Session, Parameters);
-        Editor = new PluginEditor(Session, Parameters, State, Audio);
+        Editor = new PluginEditor(Session, Parameters, Audio);
     }
 
     public PluginSession Session { get; }

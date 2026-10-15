@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- The VST3 wrapper, both identities in one module: "Noumenon" (instrument) and "Noumenon FX"
+         (effect) are two classes of one factory, so a host loads one .vst3 and boots .NET once.
+         NPlug implements VST3 in C#; its native proxy (copied as Noumenon.vst3) starts the
+         machine-wide .NET 10 through hostfxr and loads this assembly. NPlug's NativeAOT route is not
+         used: the editor is WinForms. The assembly is named Noumenon because the proxy derives the
+         assembly, runtimeconfig and module names from its own file name. x64 only. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Platforms>x64</Platforms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Noumenon</AssemblyName>
+    <RootNamespace>Noumenon.Vst3</RootNamespace>
+    <!-- A component the proxy loads through hostfxr: every dependency is copied next to it and a
+         runtimeconfig is generated, which a plain class library would not get. -->
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+
+    <!-- NPlug's targets turn NativeAOT on for publishing and invariant globalization on for the
+         module; neither suits a WinForms plugin that shares the host's runtime with other plugins. -->
+    <PublishAot>false</PublishAot>
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!-- Read from the generated runtimeconfig when this module is the first .NET in the host
+         process: the same GC setup as the standalone and the VST2 wrapper. -->
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <TieredPGO>true</TieredPGO>
+
+    <!-- Product metadata; PluginIdentity.Version mirrors the version for the host. -->
+    <Version>0.1.0</Version>
+    <Authors>Noumenon</Authors>
+    <Company>Noumenon</Company>
+    <Product>Noumenon</Product>
+    <Description>Noumenon - a generative ambient loop instrument, and Noumenon FX (VST3 via NPlug).</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NPlug" Version="0.5.0.380" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Noumenon.Engine\Noumenon.Engine.csproj" />
+    <ProjectReference Include="..\Noumenon.Ui\Noumenon.Ui.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Noumenon.Vst3.Tests" />
+  </ItemGroup>
+
+  <Import Project="Bundle.targets" />
+
+</Project>

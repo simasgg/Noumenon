@@ -1,0 +1,21 @@
+<Project>
+
+  <!-- After every build the output folder is also laid out as a VST3 bundle a host scans,
+       $(OutDir)deploy\Noumenon.vst3\Contents\x86_64-win\: the NPlug proxy (Noumenon.vst3), this
+       assembly with its runtimeconfig and deps, every dependency, and the factory content as
+       content\ next to them, where the preset library looks for it. Debug builds keep the symbols
+       so breakpoints bind when a host loads the bundle. -->
+  <Target Name="BuildVst3Bundle" AfterTargets="Build">
+    <PropertyGroup>
+      <_Vst3BundleBinaryDir>$(OutDir)deploy\$(TargetName).vst3\Contents\x86_64-win\</_Vst3BundleBinaryDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_Vst3BundleFile Include="$(OutDir)**\*" Exclude="$(OutDir)deploy\**" />
+      <_Vst3BundleFile Remove="$(OutDir)**\*.pdb" Condition="'$(Configuration)' != 'Debug'" />
+      <_Vst3BundleContent Include="$(MSBuildThisFileDirectory)..\content\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_Vst3BundleFile)" DestinationFiles="@(_Vst3BundleFile->'$(_Vst3BundleBinaryDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_Vst3BundleContent)" DestinationFiles="@(_Vst3BundleContent->'$(_Vst3BundleBinaryDir)content\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -16,9 +16,15 @@
   <Project Path="Noumenon.Vst2.Fx/NoumenonFx.Vst2.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
+  <Project Path="Noumenon.Vst3/Noumenon.Vst3.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
   <Project Path="Noumenon.TestHarness/Noumenon.TestHarness.csproj" />
   <Project Path="Noumenon.Tests/Noumenon.Tests.csproj" />
   <Project Path="Noumenon.Vst2.Tests/Noumenon.Vst2.Tests.csproj">
+    <Platform Solution="*|x64" Project="x64" />
+  </Project>
+  <Project Path="Noumenon.Vst3.Tests/Noumenon.Vst3.Tests.csproj">
     <Platform Solution="*|x64" Project="x64" />
   </Project>
 </Solution>

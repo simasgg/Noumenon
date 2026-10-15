@@ -51,6 +51,12 @@ public sealed class NoumenonEditor : UserControl
     /// <summary>Raised after the control has resized itself for a new scale, so the host can refit its window.</summary>
     public event Action? PanelScaleChanged;
 
+    /// <summary>Raised when a mouse gesture (press to release) begins, before it changes anything; a plugin host opens its edits here.</summary>
+    public event Action? GestureStarted;
+
+    /// <summary>Raised when a gesture ends, after its last change; a plugin host closes its edits here.</summary>
+    public event Action? GestureEnded;
+
     [Browsable(false), DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
     public float PanelScale
     {
@@ -252,7 +258,11 @@ public sealed class NoumenonEditor : UserControl
         host.LoadPreset(next);
     }
 
-    private void OnGestureStarted() => gestureBefore = Snapshot();
+    private void OnGestureStarted()
+    {
+        gestureBefore = Snapshot();
+        GestureStarted?.Invoke();
+    }
 
     private void OnGestureEnded()
     {
@@ -264,6 +274,7 @@ public sealed class NoumenonEditor : UserControl
             undo.Push(gestureBefore, after);
 
         gestureBefore = null;
+        GestureEnded?.Invoke();
     }
 
     private float[] Snapshot()

@@ -1,4 +1,3 @@
-using System.Globalization;
 using Jacobi.Vst.Plugin.Framework;
 using Noumenon.Engine;
 using Noumenon.Engine.Parameters;
@@ -37,7 +36,7 @@ internal sealed class PluginParameters
             var p = all[i];
             if (!categories.TryGetValue(p.Group, out var category))
             {
-                category = new VstParameterCategory { Name = CategoryName(p.Group) };
+                category = new VstParameterCategory { Name = ParameterTable.GroupName(p.Group) };
                 categories[p.Group] = category;
                 Categories.Add(category);
             }
@@ -162,82 +161,19 @@ internal sealed class PluginParameters
         return p.Format(real);
     }
 
-    /// <summary>A value typed into a host's generic editor: a number in real units (a unit suffix is ignored) or a choice name.</summary>
+    /// <summary>A value typed into a host's generic editor, read by <see cref="ParameterText"/>: a number in real units or a choice name.</summary>
     public bool Parse(int index, string? text)
     {
-        if ((uint)index >= (uint)hostValues.Length || string.IsNullOrWhiteSpace(text))
+        if ((uint)index >= (uint)hostValues.Length)
             return false;
 
         var p = ParameterTable.All[index];
-        var trimmed = text.Trim();
-        float value;
-        if (p.Kind == ParamKind.Choice)
-        {
-            var choice = -1;
-            for (var i = 0; i < p.Choices.Count; i++)
-            {
-                if (string.Equals(p.Choices[i], trimmed, StringComparison.OrdinalIgnoreCase))
-                    choice = i;
-            }
-
-            if (choice < 0 && !int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out choice))
-                return false;
-
-            value = choice;
-        }
-        else if (p.Kind is ParamKind.Toggle or ParamKind.Trigger)
-        {
-            if (trimmed.Equals("on", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("fire", StringComparison.OrdinalIgnoreCase) || trimmed == "1")
-                value = 1f;
-            else if (trimmed.Equals("off", StringComparison.OrdinalIgnoreCase) || trimmed == "0" || trimmed == "-")
-                value = 0f;
-            else
-                return false;
-        }
-        else
-        {
-            var end = 0;
-            while (end < trimmed.Length && (char.IsDigit(trimmed[end]) || trimmed[end] is '-' or '+' or '.' or ',' || (end > 0 && trimmed[end] is 'e' or 'E')))
-                end++;
-
-            if (end == 0 || !float.TryParse(trimmed[..end].Replace(',', '.'), NumberStyles.Float, CultureInfo.InvariantCulture, out value))
-                return false;
-
-            if (p.Unit == Units.Hertz && trimmed.EndsWith("kHz", StringComparison.OrdinalIgnoreCase))
-                value *= 1000f;
-            else if (p.Unit == Units.Percent)
-                value /= 100f;
-        }
+        if (!ParameterText.TryParse(p, text, out var value))
+            return false;
 
         engine.Parameters.Set(p.Id, value);
         PushToHost(notify: false);
 
         return true;
     }
-
-    private static string CategoryName(ParamGroup group) => group switch
-    {
-        ParamGroup.OscillatorA => "Oscillators A",
-        ParamGroup.OscillatorB => "Oscillators B",
-        ParamGroup.SectionA => "Section A",
-        ParamGroup.SectionB => "Section B",
-        ParamGroup.Pitch => "Pitch",
-        ParamGroup.Mix => "Mix",
-        ParamGroup.Sampler => "Sampler",
-        ParamGroup.MasterFilter => "Master Filter",
-        ParamGroup.Distortion => "Distortion",
-        ParamGroup.Eq => "EQ",
-        ParamGroup.Spin => "Drift",
-        ParamGroup.Resochord => "Resonator",
-        ParamGroup.Reverb => "Reverb",
-        ParamGroup.Output => "Output",
-        ParamGroup.Scope => "Scope",
-        ParamGroup.Post => "Post",
-        ParamGroup.Transport => "Transport",
-        ParamGroup.PlayMode => "Play Mode",
-        ParamGroup.ModWheel => "Mod Wheel",
-        ParamGroup.Global => "Global",
-        ParamGroup.ModMatrix => "Mod Matrix",
-        _ => group.ToString(),
-    };
 }

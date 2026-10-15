@@ -1,37 +1,56 @@
 <#
 .SYNOPSIS
-    Loads the built (or installed) Noumenon VST2 plugins the way a native host does, without a DAW.
+    Loads the built (or installed) Noumenon plugins the way a native host does, without a DAW:
+    the two VST2 plugins through their bridges, the VST3 module through Steinberg's validator.
 
 .DESCRIPTION
-    LoadLibraryEx on the native bridge -> GetProcAddress("VSTPluginMain") -> call it with an
-    audioMaster callback -> walk the plugin through a host's first minute: check the AEffect magic,
-    flags and counts, effOpen, set the rate and block size, mains on, read names and a parameter,
-    send a MIDI note, render blocks and make sure they are not silent, ask for the state chunk and
-    hand it back, read the editor rectangle, close. With -Editor the editor is also opened inside a
-    window for a moment and a screenshot is saved.
+    VST2 (a .dll): LoadLibraryEx on the native bridge -> GetProcAddress("VSTPluginMain") -> call it
+    with an audioMaster callback -> walk the plugin through a host's first minute: check the AEffect
+    magic, flags and counts, effOpen, set the rate and block size, mains on, read names and a
+    parameter, send a MIDI note, render blocks and make sure they are not silent, ask for the state
+    chunk and hand it back, read the editor rectangle, close. With -Editor the editor is also opened
+    inside a window for a moment and a screenshot is saved.
+
+    VST3 (a .vst3 file or bundle folder): the module is handed to Steinberg's own validator (the VST3
+    SDK's conformance suite, as NPlug.Validator ships it in nplug_validator.dll), which loads the
+    NPlug proxy, lets it boot .NET and runs every test against both classes in the module. With
+    -Extensive the validator's long suite runs too. The full report is saved next to the
+    screenshots.
 
     This must run under **Windows PowerShell 5.1**, which is a .NET *Framework* process: CoreCLR is
-    not already loaded there, so ijwhost has to locate hostfxr and boot the runtime itself, exactly
-    as FL Studio makes it. (Under PowerShell 7 a CoreCLR is already in-process and the test would
-    prove less; the script relaunches itself under 5.1 if started there.)
+    not already loaded there, so the plugin's own loader (VST.NET's ijwhost, NPlug's hostfxr proxy)
+    has to locate the runtime and boot it, exactly as FL Studio makes it. (Under PowerShell 7 a
+    CoreCLR is already in-process and the test would prove less; the script relaunches itself under
+    5.1 if started there.)
 
-    ijwhost finds the runtime through DOTNET_ROOT or the machine-wide install registered in
+    Both loaders find the runtime through DOTNET_ROOT or the machine-wide install registered in
     HKLM\SOFTWARE\dotnet. On a machine with only a user-local SDK (%USERPROFILE%\.dotnet) the script
     sets DOTNET_ROOT to it for this process and says so: a DAW would need the .NET 10 Desktop
     Runtime installed, or the same variable in the user's environment.
 
+    Each plugin runs in its own process unless -SameProcess is given; then the listed plugins load
+    one after the other into one process, in the order given — the coexistence check for a DAW that
+    has the VST3 module and a VST2 plugin open at once. (Two VST2 bridges in one process deadlock,
+    a VST.NET limitation, so a same-process list should hold at most one .dll.)
+
 .EXAMPLE
-    .\tools\Test-PluginLoad.ps1                               # both deploy folders, Debug
+    .\tools\Test-PluginLoad.ps1                               # both VST2 deploy folders and the VST3 bundle, Debug
     .\tools\Test-PluginLoad.ps1 -Configuration Release -Editor
     .\tools\Test-PluginLoad.ps1 -Dll "C:\Program Files\Common Files\VST2\Noumenon\Noumenon.Vst2.dll"
+    .\tools\Test-PluginLoad.ps1 -Dll "C:\Program Files\Common Files\VST3\Noumenon.vst3" -Extensive
+    .\tools\Test-PluginLoad.ps1 -SameProcess -Dll Noumenon.Vst3\bin\x64\Debug\net10.0-windows\deploy\Noumenon.vst3, Noumenon.Vst2\bin\x64\Debug\net10.0-windows\deploy\Noumenon.Vst2.dll
 #>
 [CmdletBinding()]
 param(
+    [Alias('Plugin')]
     [string[]]$Dll,
     [string]$Configuration = 'Debug',
     [switch]$Editor,
     [int]$Blocks = 32,
-    [string]$ScreenshotFolder = $env:TEMP
+    [string]$ScreenshotFolder = $env:TEMP,
+    [string]$Validator,
+    [switch]$Extensive,
+    [switch]$SameProcess
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,10 +59,17 @@ if (-not $Dll -or $Dll.Count -eq 0)
 {
     $Dll = @(
         (Join-Path $PSScriptRoot "..\Noumenon.Vst2\bin\x64\$Configuration\net10.0-windows\deploy\Noumenon.Vst2.dll"),
-        (Join-Path $PSScriptRoot "..\Noumenon.Vst2.Fx\bin\x64\$Configuration\net10.0-windows\deploy\NoumenonFx.Vst2.dll")
+        (Join-Path $PSScriptRoot "..\Noumenon.Vst2.Fx\bin\x64\$Configuration\net10.0-windows\deploy\NoumenonFx.Vst2.dll"),
+        (Join-Path $PSScriptRoot "..\Noumenon.Vst3\bin\x64\$Configuration\net10.0-windows\deploy\Noumenon.vst3")
     )
 }
-$Dll = @($Dll | ForEach-Object { [IO.Path]::GetFullPath($_) })
+# A parent process hands a same-process list over as one ';'-joined argument.
+$Dll = @($Dll | ForEach-Object { $_ -split ';' } | Where-Object { $_ } | ForEach-Object { [IO.Path]::GetFullPath($_) })
+
+function Test-IsVst3([string]$path)
+{
+    return $path.TrimEnd('\', '/').EndsWith('.vst3', [StringComparison]::OrdinalIgnoreCase)
+}
 foreach ($path in $Dll)
 {
     if (-not (Test-Path $path))
@@ -86,18 +112,32 @@ if (-not $machineWide -and -not $env:DOTNET_ROOT)
 # must bridge or sandbox them; that is verified in a real host, not here. We also re-launch under
 # Windows PowerShell 5.1 (a .NET Framework process) so ijwhost does the full runtime bootstrap, as in
 # FL Studio, rather than attaching to an already-loaded CoreCLR.
-if ($PSVersionTable.PSEdition -eq 'Core' -or $Dll.Count -gt 1)
+if ($PSVersionTable.PSEdition -eq 'Core' -or ($Dll.Count -gt 1 -and -not $SameProcess))
 {
     $ps51 = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
     $anyFailed = 0
-    foreach ($one in $Dll)
+    $groups = if ($SameProcess) { , ($Dll -join ';') } else { $Dll }
+    foreach ($one in $groups)
     {
+        $names = ($one -split ';' | ForEach-Object { [IO.Path]::GetFileName($_.TrimEnd('\')) }) -join ' + '
         Write-Host ""
-        Write-Host "=== $([IO.Path]::GetFileName($one)) (fresh Windows PowerShell 5.1 process) ===" -ForegroundColor Cyan
+        Write-Host "=== $names (fresh Windows PowerShell 5.1 process) ===" -ForegroundColor Cyan
         $arguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath, '-Configuration', $Configuration, '-Blocks', $Blocks, '-ScreenshotFolder', $ScreenshotFolder, '-Dll', $one)
         if ($Editor)
         {
             $arguments += '-Editor'
+        }
+        if ($Extensive)
+        {
+            $arguments += '-Extensive'
+        }
+        if ($Validator)
+        {
+            $arguments += @('-Validator', $Validator)
+        }
+        if ($SameProcess)
+        {
+            $arguments += '-SameProcess'
         }
         & $ps51 @arguments
         if ($LASTEXITCODE -ne 0)
@@ -108,7 +148,7 @@ if ($PSVersionTable.PSEdition -eq 'Core' -or $Dll.Count -gt 1)
     if ($anyFailed -eq 0)
     {
         Write-Host ""
-        Write-Host "PASS - every plugin loaded, rendered and round-tripped its state (each in its own process)." -ForegroundColor Green
+        Write-Host "PASS - every plugin loaded, rendered and round-tripped its state or passed the VST3 validator$(if ($SameProcess) { ' (all in one process)' } else { ' (each in its own process)' })." -ForegroundColor Green
     }
     exit $anyFailed
 }
@@ -119,6 +159,72 @@ $source = @"
 using System;
 using System.Runtime.InteropServices;
 using System.Text;
+
+// Steinberg's VST3 validator as NPlug.Validator builds it (nplug_validator.dll, a plain C API): the
+// report arrives one character at a time through a callback.
+public static class Vst3Validator
+{
+    [DllImport("kernel32", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern IntPtr LoadLibraryExW(string path, IntPtr reserved, uint flags);
+    [DllImport("kernel32", SetLastError = true)]
+    private static extern IntPtr GetProcAddress(IntPtr module, string name);
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void InitializeDelegate();
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int ValidateDelegate(int argc, IntPtr argv, IntPtr output, IntPtr error);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate void CharDelegate(int c);
+
+    private static IntPtr module;
+    private static ValidateDelegate validate;
+    private static StringBuilder report;
+    private static readonly CharDelegate Sink = OnChar;
+
+    private static void OnChar(int c)
+    {
+        if (report != null) report.Append((char)c);
+    }
+
+    public static int Run(string validatorDll, string pluginPath, bool extensive, StringBuilder output)
+    {
+        if (module == IntPtr.Zero)
+        {
+            module = LoadLibraryExW(validatorDll, IntPtr.Zero, 0x00000008 /* LOAD_WITH_ALTERED_SEARCH_PATH */);
+            if (module == IntPtr.Zero)
+                throw new Exception("LoadLibraryEx failed for the validator, win32=" + Marshal.GetLastWin32Error());
+
+            InitializeDelegate initialize = (InitializeDelegate)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "nplug_validator_initialize"), typeof(InitializeDelegate));
+            initialize();
+            validate = (ValidateDelegate)Marshal.GetDelegateForFunctionPointer(GetProcAddress(module, "nplug_validator_validate"), typeof(ValidateDelegate));
+        }
+
+        string[] args = extensive ? new string[] { "validator", "-e", pluginPath } : new string[] { "validator", pluginPath };
+        IntPtr[] strings = new IntPtr[args.Length];
+        IntPtr argv = Marshal.AllocHGlobal(IntPtr.Size * args.Length);
+        try
+        {
+            for (int i = 0; i < args.Length; i++)
+            {
+                strings[i] = Marshal.StringToHGlobalAnsi(args[i]);
+                Marshal.WriteIntPtr(argv, i * IntPtr.Size, strings[i]);
+            }
+
+            report = output;
+            IntPtr sink = Marshal.GetFunctionPointerForDelegate(Sink);
+            return validate(args.Length, argv, sink, sink);
+        }
+        finally
+        {
+            report = null;
+            foreach (IntPtr s in strings)
+            {
+                if (s != IntPtr.Zero) Marshal.FreeHGlobal(s);
+            }
+            Marshal.FreeHGlobal(argv);
+        }
+    }
+}
 
 public static class VstHost
 {
@@ -378,10 +484,52 @@ function Check($condition, $message)
     }
 }
 
+if (-not $Validator)
+{
+    $nugetRoot = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget\packages' }
+    $Validator = Join-Path $nugetRoot 'nplug.validator\1.4.0.380\build\win-x64\native\nplug_validator.dll'
+    if (-not (Test-Path $Validator))
+    {
+        $Validator = Join-Path $PSScriptRoot "..\Noumenon.Vst3.Tests\bin\x64\$Configuration\net10.0-windows\nplug_validator.dll"
+    }
+}
+$Validator = [IO.Path]::GetFullPath($Validator)
+
+$vst2Count = @($Dll | Where-Object { -not (Test-IsVst3 $_) }).Count
+if ($vst2Count -gt 1)
+{
+    Write-Warning "$vst2Count VST2 bridges in one process: VST.NET's second bridge deadlocks while booting .NET; this run will most likely hang."
+}
+
 foreach ($path in $Dll)
 {
     Write-Host ''
     Write-Host "Plugin : $path"
+    if (Test-IsVst3 $path)
+    {
+        if (-not (Test-Path $Validator))
+        {
+            Write-Host "FAIL - the VST3 validator was not found: $Validator (restore Noumenon.Vst3.Tests, or pass -Validator)" -ForegroundColor Red
+            $failures++
+            continue
+        }
+
+        Write-Host "   validator: $Validator$(if ($Extensive) { ' (extensive)' })"
+        $report = New-Object System.Text.StringBuilder
+        $started = [DateTime]::UtcNow
+        $exitCode = [Vst3Validator]::Run($Validator, $path, [bool]$Extensive, $report)
+        $text = $report.ToString()
+        $reportFile = Join-Path $ScreenshotFolder ("noumenon-vst3-validator-" + [IO.Path]::GetFileNameWithoutExtension($path.TrimEnd('\')) + ".txt")
+        [IO.File]::WriteAllText($reportFile, $text)
+        $result = [regex]::Match($text, 'Result: (\d+) tests passed, (\d+) tests failed')
+        Write-Host ("   {0} after {1:0.0} s, report: {2}" -f $(if ($result.Success) { $result.Value } else { 'no result line' }), ([DateTime]::UtcNow - $started).TotalSeconds, $reportFile)
+        Check ($exitCode -eq 0) "validator exit code 0 (was $exitCode)"
+        Check ($result.Success -and [int]$result.Groups[2].Value -eq 0 -and [int]$result.Groups[1].Value -gt 0) 'every validator test passed'
+        Check ($text.Contains('Noumenon FX') -and $text -match 'Instrument\|Synth') 'both classes were validated (Noumenon, Instrument|Synth; Noumenon FX)'
+        Check (-not $text.Contains('Failed to connect')) 'processor and controller connected (the editor depends on it)'
+        continue
+    }
+
     try
     {
         $effect = [VstHost]::Load($path)
@@ -527,7 +675,7 @@ foreach ($path in $Dll)
 Write-Host ''
 if ($failures -eq 0)
 {
-    Write-Host "PASS - $($Dll.Count) plugin(s) loaded, rendered and round-tripped their state." -ForegroundColor Green
+    Write-Host "PASS - $($Dll.Count) plugin(s) loaded and checked in this process." -ForegroundColor Green
     exit 0
 }
 Write-Host "FAIL - $failures check(s) failed." -ForegroundColor Red
