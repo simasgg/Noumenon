@@ -8,8 +8,10 @@ namespace Noumenon.Ui.Widgets;
 /// The sampler's display: the selected key's waveform with the loop range as two handles, the
 /// play head, and the file's name. Drag a handle to move a loop point, drag the region to shift
 /// the whole loop, double-click (or drop a file on it) to load a sample into the selected key,
-/// right-click for load, clear, loop reset and retrigger. Peaks are computed once per sample and
-/// kept until the sample changes.
+/// right-click for load, clear, loop reset, retrigger and "use as wavetable". The other modes show
+/// how they read: Granular draws every sounding grain as a tick (taller while its window is open)
+/// around the grains' centre, Stretch shades the window being analysed around its playhead. Peaks
+/// are computed once per sample and kept until the sample changes.
 /// </summary>
 public sealed class WaveformWidget : Widget, IFileDropTarget
 {
@@ -37,6 +39,10 @@ public sealed class WaveformWidget : Widget, IFileDropTarget
     private float shownStart = float.NaN;
     private float shownEnd = float.NaN;
     private SampleData? shownData;
+    private readonly float[] grainPositions = new float[Granulator.MaxGrains];
+    private readonly float[] grainLevels = new float[Granulator.MaxGrains];
+    private int shownGrains = -1;
+    private SampleMode shownMode;
 
     public WaveformWidget(NoumenonEngine engine, IEditorHost host, float x, float y, float width, float height)
     {
@@ -91,6 +97,8 @@ public sealed class WaveformWidget : Widget, IFileDropTarget
             }
         }
 
+        DrawMode(g, inner, slot.Data);
+
         using (var handlePen = new Pen(EditorTheme.Armed, 1.5f))
         {
             var sx = inner.X + inner.Width * start;
@@ -118,13 +126,17 @@ public sealed class WaveformWidget : Widget, IFileDropTarget
         var position = data is null ? -1 : (int)(engine.SamplePosition / Math.Max(1, data.Length) * Inner.Width);
         var start = loopStart.Value;
         var end = loopEnd.Value;
-        if (ReferenceEquals(data, shownData) && position == shownPosition && start == shownStart && end == shownEnd)
+        var mode = engine.SampleMode;
+        var grains = mode == SampleMode.Granular && data is not null ? GrainHash() : 0;
+        if (ReferenceEquals(data, shownData) && position == shownPosition && start == shownStart && end == shownEnd && grains == shownGrains && mode == shownMode)
             return false;
 
         shownData = data;
         shownPosition = position;
         shownStart = start;
         shownEnd = end;
+        shownGrains = grains;
+        shownMode = mode;
 
         return true;
     }
@@ -214,8 +226,60 @@ public sealed class WaveformWidget : Widget, IFileDropTarget
             loopEnd.Reset();
         }));
         menu.Items.Add("Retrigger (gate)", null, (_, _) => engine.Gate());
+        menu.Items.Add($"Use key {key} as the wavetable", null, (_, _) => Commit(() => engine.Parameters.Set(ParamId.WavetableKey, key)));
 
         return menu;
+    }
+
+    private void DrawMode(Graphics g, RectangleF inner, SampleData data)
+    {
+        switch (engine.SampleMode)
+        {
+            case SampleMode.Granular:
+            {
+                var count = engine.CopyGrains(grainPositions, grainLevels);
+                using var pen = new Pen(Color.FromArgb(200, EditorTheme.Readout), 1.5f);
+                var mid = inner.Y + inner.Height / 2f;
+                for (var i = 0; i < count; i++)
+                {
+                    var x = inner.X + inner.Width * Math.Clamp(grainPositions[i], 0f, 1f);
+                    var half = 3f + (inner.Height / 2f - 4f) * grainLevels[i];
+                    g.DrawLine(pen, x, mid - half, x, mid + half);
+                }
+
+                break;
+            }
+            case SampleMode.Stretch:
+            {
+                // The analysis window spans its points at the file's rate (the pitch stretches it a little more).
+                var span = engine.StretchFrameSize * (data.SampleRate / engine.SampleRate) / Math.Max(1, data.Length);
+                var centre = (float)(engine.SamplePosition / Math.Max(1, data.Length));
+                var width = (float)Math.Min(1.0, span) * inner.Width;
+                using var brush = new SolidBrush(Color.FromArgb(60, EditorTheme.Readout));
+                g.FillRectangle(brush, inner.X + inner.Width * centre - width / 2f, inner.Y, width, inner.Height);
+                break;
+            }
+        }
+
+        var label = engine.SampleMode switch
+        {
+            SampleMode.Granular => $"GRANULAR · {engine.ActiveGrains} grain{(engine.ActiveGrains == 1 ? "" : "s")}",
+            SampleMode.Stretch => $"STRETCH · ×{engine.Parameters.Get(ParamId.StretchAmount):0.#}",
+            _ => null,
+        };
+
+        if (label is not null)
+            EditorDraw.Text(g, label, new RectangleF(inner.X + 2f, inner.Bottom - 10f, inner.Width - 4f, 10f), EditorTheme.SmallFont, EditorTheme.Readout, EditorTheme.Left);
+    }
+
+    private int GrainHash()
+    {
+        var count = engine.CopyGrains(grainPositions, grainLevels);
+        var hash = count;
+        for (var i = 0; i < count; i++)
+            hash = hash * 31 + (int)(grainPositions[i] * 4096f) + (int)(grainLevels[i] * 16f) * 7;
+
+        return hash;
     }
 
     private void EnsurePeaks(SampleData data, int columns)

@@ -9,8 +9,11 @@ namespace Noumenon.Dsp.Oscillators;
 /// — cheap and click-free while the pitch moves, with residual aliasing around −50 dB for a 1 kHz
 /// saw at 48 kHz and far lower in the drone register; the optional 2× engine rate lowers it further.
 /// The frequency glides over ~20 ms so a stepped semitone knob or a jumping P fader never clicks.
-/// Noise comes from a seeded <see cref="Xoshiro128"/>, so a render is reproducible.
-/// <see cref="Process"/> runs on the audio thread and does not allocate.
+/// Noise comes from a seeded <see cref="Xoshiro128"/>, so a render is reproducible. The Wavetable
+/// wave reads whatever <see cref="Wavetable"/> the engine hands it, at the band-limited level for
+/// the pitch (chosen when the frequency is set), with Shape — glided like the pitch — scanning its
+/// frames; the Sub wave derives its octave-below from the same phase, flipping a divider bit at
+/// every wrap. <see cref="Process"/> runs on the audio thread and does not allocate.
 /// </summary>
 public sealed class Oscillator
 {
@@ -30,13 +33,20 @@ public sealed class Oscillator
     private float incrementCoeff = 1f;
     private float frequencyHz = 261.6256f;
     private float shape = 0.5f;
+    private float shapeRaw = 0.5f;
+    private float scan = 0.5f;
     private float noiseCutoffHz = 2000f;
     private float noiseCoeff = 0.1f;
     private float noiseState;
     private double noisePhase;
     private double noiseIncrement;
+    private int tableLevel;
+    private int subHalf;
 
     public Waveform Waveform { get; set; } = Waveform.Sine;
+
+    /// <summary>The table the Wavetable wave reads; null plays silence.</summary>
+    public Wavetable? Table { get; set; }
 
     public double Phase => phase;
 
@@ -53,6 +63,8 @@ public sealed class Oscillator
     {
         phase = 0.0;
         increment = incrementTarget;
+        scan = shapeRaw;
+        subHalf = 0;
         noiseState = 0f;
         noisePhase = 0.0;
         rng.Reseed(seed);
@@ -63,9 +75,14 @@ public sealed class Oscillator
         frequencyHz = hz;
         var normalized = hz / sampleRate;
         incrementTarget = normalized < 0.0 ? 0.0 : normalized > MaxNormalizedFrequency ? MaxNormalizedFrequency : normalized;
+        tableLevel = Wavetable.LevelFor(incrementTarget);
     }
 
-    public void SetShape(float value) => shape = DspHelper.Clamp(value, MinShape, 1f);
+    public void SetShape(float value)
+    {
+        shape = DspHelper.Clamp(value, MinShape, 1f);
+        shapeRaw = DspHelper.Clamp01(value);
+    }
 
     public void SetNoiseCutoff(float hz)
     {
@@ -105,6 +122,20 @@ public sealed class Oscillator
                 noiseState += noiseCoeff * (rng.NextBipolar() - noiseState);
                 y = noiseState;
                 break;
+            case Waveform.Wavetable:
+            {
+                scan += (shapeRaw - scan) * incrementCoeff;
+                var table = Table;
+                y = table is null ? 0f : table.Read(p, scan, tableLevel);
+                break;
+            }
+            case Waveform.Sub:
+            {
+                var angle = shapeRaw * (MathF.PI * 0.5f);
+                var sub = 0.5 * (p + subHalf);
+                y = MathF.Cos(angle) * MathF.Sin((float)(p * DspHelper.TwoPi)) + MathF.Sin(angle) * MathF.Sin((float)(sub * DspHelper.TwoPi));
+                break;
+            }
             default:
                 noisePhase += noiseIncrement;
                 if (noisePhase >= 1.0)
@@ -119,7 +150,10 @@ public sealed class Oscillator
 
         p += dt;
         if (p >= 1.0)
+        {
             p -= 1.0;
+            subHalf ^= 1;
+        }
 
         phase = p;
 

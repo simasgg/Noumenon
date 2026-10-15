@@ -1,4 +1,5 @@
 using System.Globalization;
+using Noumenon.Dsp.Oscillators;
 using Noumenon.Engine;
 using Noumenon.Engine.Lanes;
 using Noumenon.Engine.Parameters;
@@ -10,8 +11,9 @@ namespace Noumenon.Ui.Pages;
 /// The main panel, laid out as the signal flows: the two oscillator sections as strips (a stack
 /// display over six slot cards each), the pitch faders and the sampler beneath them, the main
 /// display with the combine controls in the column to their right, the effect chain as a row of
-/// modules left to right into the output module, and along the bottom the lanes, the transport,
-/// the mod-wheel box and the wordmark. Coordinates are logical pixels on a 1000 × 664 canvas
+/// modules left to right into the output module, and along the bottom the lanes, the transport
+/// (with the snapshot morph: a preset, a time, go), the mod-wheel box and the wordmark. The
+/// sampler strip is the short form of the SAMPLE page. Coordinates are logical pixels on a 1000 × 664 canvas
 /// whose top 24 are the editor's own bar.
 /// </summary>
 internal static class MainPage
@@ -31,6 +33,9 @@ internal static class MainPage
     private const float CardStep = 111f;
     private const float CardsX = 90f;
 
+    // The morph time is the panel's own setting, kept for the session like the panel scale.
+    private static float morphSeconds = 8f;
+
     public static PageContent Build(NoumenonEngine engine, IEditorHost host)
     {
         var w = new List<Widget>();
@@ -42,7 +47,7 @@ internal static class MainPage
         BuildChain(engine, w);
         BuildOut(engine, w);
         BuildLanes(engine, w);
-        BuildTransport(engine, w);
+        BuildTransport(engine, host, w);
         BuildWheel(engine, w);
         BuildWordmark(engine, w);
 
@@ -96,7 +101,7 @@ internal static class MainPage
         w.Add(new LabelWidget($"{section}{slot + 1}", x + 58, y + 43, 48, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
     }
 
-    private static bool IsNoise(NoumenonEngine engine, SectionId section, int slot) => engine.Parameters.GetInt(ParameterTable.Osc(section, slot, OscParam.Wave)) >= 6;
+    private static bool IsNoise(NoumenonEngine engine, SectionId section, int slot) => engine.Parameters.GetInt(ParameterTable.Osc(section, slot, OscParam.Wave)) is (int)Waveform.NoiseLp or (int)Waveform.NoiseSh;
 
     private static void BuildPitch(NoumenonEngine engine, List<Widget> w)
     {
@@ -130,7 +135,7 @@ internal static class MainPage
         w.Add(new MenuWidget(engine, ParamId.SamplerModSource, 344, y0 + 49, 40, 12));
 
         w.Add(new LabelWidget("MODE", 392, y0 + 4, 30, 12, EditorTheme.Right, EditorTheme.SmallFont, EditorTheme.TextDim));
-        w.Add(new MenuWidget(engine, ParamId.SamplerMode, 426, y0 + 4, 50, 12));
+        w.Add(new MenuWidget(engine, ParamId.SamplerMode, 426, y0 + 4, 56, 12));
         w.Add(new NumberWidget(engine, ParamId.SamplerLoopCrossfade, 426, y0 + 19, 50, 12, "XFADE", 34));
         w.Add(new ToggleWidget(engine, ParamId.SamplerRetrigger, 392, y0 + 35, 40, 12, "RETRIG"));
         w.Add(new ToggleWidget(engine, ParamId.SamplerStereo, 436, y0 + 35, 40, 12, "STEREO"));
@@ -252,7 +257,7 @@ internal static class MainPage
         w.Add(new DisplayTextWidget(() => LaneSummary(engine), 12, t + 159, 424, 12, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark, tooltip: "Lanes: faders that play themselves"));
     }
 
-    private static void BuildTransport(NoumenonEngine engine, List<Widget> w)
+    private static void BuildTransport(NoumenonEngine engine, IEditorHost host, List<Widget> w)
     {
         var inv = CultureInfo.InvariantCulture;
         var t = BottomTop;
@@ -263,9 +268,27 @@ internal static class MainPage
         w.Add(new NumberWidget(engine, ParamId.RandomSeed, 690, t + 19, 46, 12, "SEED", 34));
         w.Add(new DisplayTextWidget(() => PlayState(engine, inv), 456, t + 50, 140, 14, tooltip: "The play state: free run, host play, fading, muted"));
         w.Add(new DisplayTextWidget(() => $"{engine.HostSampleRate.ToString("0", inv)} Hz × {engine.Oversampling}  ·  {engine.LatencySamples} smp  ·  {engine.ActiveScale.Name}", 456, t + 70, 284, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
-        w.Add(new LabelWidget("Space restart · R randomize · M mute · Ctrl+Z undo", 456, t + 92, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
-        w.Add(new LabelWidget("Stack: drag a mark for pitch and level · wheel for semitones", 456, t + 106, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
-        w.Add(new LabelWidget("Bar: click the strip to arm, drag to record, release to play", 456, t + 120, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+
+        // Snapshot morph: pick a preset, a time, go — every parameter glides there; lanes and samples stay.
+        var y = t + 92;
+        w.Add(new LabelWidget("MORPH", 456, y, 34, 14, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        var target = new ListChoiceWidget(() => host.PresetNames, 490, y, 132, 14, "The preset to morph to: every parameter glides there over the time beside it; lanes and samples stay");
+        w.Add(target);
+        w.Add(new ValueBoxWidget(() => morphSeconds, value => morphSeconds = value, 0.5f, 120f, 8f, "0.#", " s", 626, y, 40, 14, "Morph time: drag or wheel, double-click for 8 s"));
+        w.Add(new TextButtonWidget("GO", 670, y, 32, 14, () => StartMorph(host, target.Selected), () => engine.IsMorphing, "Start the morph (lit while it runs)"));
+        w.Add(new TextButtonWidget("STOP", 706, y, 34, 14, engine.CancelMorph, tooltip: "Stop the morph where it is"));
+        w.Add(new MeterWidget(() => engine.IsMorphing ? engine.MorphProgress : 0f, 456, y + 19, 284, 5, MeterScale.Fraction));
+        w.Add(new LabelWidget("Space restart · R randomize · M mute · Ctrl+Z undo", 456, t + 124, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new LabelWidget("Right-click a control: lane, MIDI learn, modulate", 456, t + 138, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new LabelWidget("Bar: click the strip to arm, drag to record, release to play", 456, t + 152, 284, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+    }
+
+    private static void StartMorph(IEditorHost host, int preset)
+    {
+        if (preset < 0)
+            host.Notice("Pick a preset to morph to first.");
+        else
+            host.MorphToPreset(preset, morphSeconds);
     }
 
     private static void BuildWheel(NoumenonEngine engine, List<Widget> w)

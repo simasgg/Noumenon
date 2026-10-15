@@ -9,18 +9,19 @@ namespace Noumenon.Ui;
 /// <summary>
 /// The shared editor control: a fixed 1000 × 664 logical panel the standalone and the plugin
 /// wrappers host, scaled 1×, 1.5× or 2×. Its own bar across the top holds the preset name and
-/// bank, save, undo and redo, the MAIN / POST / MOD tabs and the scale; the pages hold every
-/// parameter. It talks to the engine directly and to the host only for presets and files. Each
-/// mouse gesture becomes one undo entry of the whole bank; Space restarts the lanes, R randomizes,
-/// M mutes unless the host is using letters as piano keys.
+/// bank, save, undo and redo, the MAIN / SAMPLE / MOD / CHORDS / POST tabs, the scale and the
+/// status line (which turns into the MIDI-learn prompt while a control waits for a controller);
+/// the pages hold every parameter. It talks to the engine directly and to the host only for
+/// presets, files and notices. Each mouse gesture becomes one undo entry of the whole bank;
+/// Space restarts the lanes, R randomizes, M mutes unless the host is using letters as piano keys.
 /// </summary>
 public sealed class NoumenonEditor : UserControl
 {
     public const int LogicalWidth = 1000;
     public const int LogicalHeight = 664;
-    public const int PageCount = 3;
+    public const int PageCount = 5;
 
-    private static readonly string[] PageNames = ["MAIN", "POST", "MOD"];
+    private static readonly string[] PageNames = ["MAIN", "SAMPLE", "MOD", "CHORDS", "POST"];
     private static readonly float[] Scales = [1f, 1.5f, 2f];
 
     private readonly NoumenonEngine engine;
@@ -36,7 +37,7 @@ public sealed class NoumenonEditor : UserControl
     {
         this.engine = engine;
         this.host = host;
-        pages = [MainPage.Build(engine, host), PostPage.Build(engine), ModPage.Build(engine)];
+        pages = [MainPage.Build(engine, host), SamplePage.Build(engine, host), ModPage.Build(engine), ChordsPage.Build(engine), PostPage.Build(engine)];
         BuildBar();
         surface.LogicalSize = new SizeF(LogicalWidth, LogicalHeight);
         surface.GestureStarted += OnGestureStarted;
@@ -110,7 +111,8 @@ public sealed class NoumenonEditor : UserControl
                 {
                     switch (widget)
                     {
-                        case KnobWidget or FaderWidget or NumberWidget or ScopeWidget or SpeedWidget or ChoiceButtonsWidget or ToggleWidget or StackWidget or LaneOverviewWidget or MeterWidget or ResonatorStripWidget:
+                        case KnobWidget or FaderWidget or NumberWidget or ScopeWidget or SpeedWidget or ChoiceButtonsWidget or ToggleWidget or StackWidget or LaneOverviewWidget or MeterWidget or ResonatorStripWidget
+                            or ValueBoxWidget or SampleKeysWidget or SourceTraceWidget or ModSlotMeterWidget or WavetableViewWidget:
                             widget.MouseDown(centre, MouseButtons.Left, 1);
                             widget.MouseMove(moved, MouseButtons.Left);
                             widget.MouseUp(moved, MouseButtons.Left);
@@ -118,7 +120,7 @@ public sealed class NoumenonEditor : UserControl
                             widget.MouseWheel(centre, -120);
                             exercised++;
                             break;
-                        case WaveIconWidget:
+                        case WaveIconWidget or ListChoiceWidget or ChordCellWidget:
                             widget.MouseWheel(centre, 120);
                             widget.MouseWheel(centre, -120);
                             exercised++;
@@ -194,10 +196,10 @@ public sealed class NoumenonEditor : UserControl
         for (var i = 0; i < PageCount; i++)
         {
             var index = i;
-            bar.Add(new TextButtonWidget(PageNames[i], 470 + i * 50, 4, 48, 16, () => ShowPage(index), () => page == index, $"{PageNames[i]} page (Ctrl+Tab cycles)"));
+            bar.Add(new TextButtonWidget(PageNames[i], 410 + i * 48, 4, 46, 16, () => ShowPage(index), () => page == index, $"{PageNames[i]} page (Ctrl+Tab cycles)"));
         }
 
-        var x = 660f;
+        var x = 656f;
         foreach (var factor in Scales)
         {
             var chosen = factor;
@@ -206,7 +208,7 @@ public sealed class NoumenonEditor : UserControl
             x += width + 2;
         }
 
-        bar.Add(new DisplayTextWidget(() => host.StatusText, 764, 4, 230, 16, null, null, EditorTheme.SmallFont, EditorTheme.TextOnDark, EditorTheme.Left));
+        bar.Add(new StatusLineWidget(engine, host, 758, 4, 236, 16));
     }
 
     private void ShowPage(int index)

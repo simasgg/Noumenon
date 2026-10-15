@@ -23,7 +23,7 @@ internal sealed class DeveloperPanel : UserControl
         ("Pitch & Mix", [ParamGroup.Pitch, ParamGroup.Mix, ParamGroup.PlayMode, ParamGroup.ModWheel]),
         ("Sampler", [ParamGroup.Sampler]),
         ("Chain", [ParamGroup.MasterFilter, ParamGroup.Distortion, ParamGroup.Eq, ParamGroup.Spin]),
-        ("Resochord & Reverb", [ParamGroup.Resochord, ParamGroup.Reverb]),
+        ("Resochord & Reverb", [ParamGroup.Resochord, ParamGroup.ChordSequencer, ParamGroup.Reverb]),
         ("Output & Post", [ParamGroup.Output, ParamGroup.Scope, ParamGroup.Post]),
         ("Transport & Global", [ParamGroup.Transport, ParamGroup.Global]),
         ("Mod Matrix", [ParamGroup.ModMatrix]),
@@ -143,6 +143,7 @@ internal sealed class DeveloperPanel : UserControl
         ParamGroup.ModWheel => "Mod wheel box",
         ParamGroup.Global => "Global: scale, tuning, host sync, engine rate",
         ParamGroup.ModMatrix => "LFOs, envelope follower, macros, matrix slots",
+        ParamGroup.ChordSequencer => "Chord sequencer",
         _ => group.ToString(),
     };
 }

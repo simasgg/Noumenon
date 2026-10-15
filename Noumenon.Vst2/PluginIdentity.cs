@@ -6,15 +6,19 @@ namespace Noumenon.Vst2;
 /// Which of the two plugins this assembly is. The sources are compiled twice: as the instrument
 /// (<c>Noumenon</c>, a Synth with two outputs that reads MIDI) and, with <c>NOUMENON_FX</c>
 /// defined, as the effect (<c>Noumenon FX</c>, the same with two inputs feeding Samp↔In, because
-/// FL Studio sends no audio into generators). Everything else is identical, down to the state
-/// chunk, so a snapshot saved from one loads in the other and each accepts the other's chunk ID.
-/// The four-character IDs are the ones noted in the licensing checklist.
+/// FL Studio sends no audio into generators, and two more as a sidechain only the envelope
+/// follower hears — the usual VST2 layout a host maps a sidechain onto). Everything else is
+/// identical, down to the state chunk, so a snapshot saved from one loads in the other and each
+/// accepts the other's chunk ID. The four-character IDs are the ones noted in the licensing checklist.
 /// </summary>
 internal static class PluginIdentity
 {
     public const string Vendor = "Noumenon";
     public const string Product = "Noumenon";
     public const int OutputCount = 2;
+
+    /// <summary>The first sidechain input (inputs 3 and 4 of the effect).</summary>
+    public const int SidechainInput = 2;
 
     /// <summary>In VST.NET's thousands notation (1100 = 1.1.0.0); 0.1.0 is 100.</summary>
     public const int Version = 100;
@@ -26,7 +30,7 @@ internal static class PluginIdentity
     public const bool IsEffect = true;
     public const string Name = "Noumenon FX";
     public const int Id = EffectId;
-    public const int InputCount = 2;
+    public const int InputCount = 4;
     public const VstPluginCategory Category = VstPluginCategory.Effect;
 #else
     public const bool IsEffect = false;

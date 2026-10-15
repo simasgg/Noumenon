@@ -105,7 +105,7 @@ internal sealed class MonitorPanel : UserControl
         Set("Resochord notes", ResochordText());
         Set("MIDI input", midi.DeviceName is null ? "no port open" + (midi.Error is null ? "" : " — " + midi.Error) : $"{midi.DeviceName} · {midi.Messages} messages{(midi.Error is null ? "" : " — " + midi.Error)}");
         Set("Last note / controller", $"{(midi.LastNote >= 0 ? ParamInfo.NoteName(midi.LastNote) + " vel " + midi.LastVelocity : "—")} · {(midi.LastController >= 0 ? "CC " + midi.LastController + " = " + midi.LastControllerValue : "—")} · engine last note {(engine.Midi.LastNote >= 0 ? ParamInfo.NoteName(engine.Midi.LastNote) : "—")}");
-        Set("Held / bend / wheel / AT", $"{engine.Midi.HeldCount} held · bend {engine.Midi.Bend.ToString("+0.00;-0.00;0.00", inv)} · wheel {engine.Midi.Wheel.ToString("0.00", inv)} · aftertouch {engine.Midi.Aftertouch.ToString("0.00", inv)} · CC{engine.Midi.MatrixController} {engine.Midi.Controller(engine.Midi.MatrixController).ToString("0.00", inv)}");
+        Set("Held / bend / wheel / AT", $"{engine.Midi.HeldCount} held · bend {engine.Midi.Bend.ToString("+0.00;-0.00;0.00", inv)} · wheel {engine.Midi.Wheel.ToString("0.00", inv)} · aftertouch {engine.Midi.Aftertouch.ToString("0.00", inv)} · CC{engine.Parameters.GetInt(ParamId.MatrixCc)} {engine.Midi.Controller(engine.Parameters.GetInt(ParamId.MatrixCc)).ToString("0.00", inv)}");
         Set("Keyboard MIDI", $"Z = {ParamInfo.NoteName(keyboard.BaseNote)}, Q = {ParamInfo.NoteName(keyboard.BaseNote + 12)} · {keyboard.HeldCount} keys down · minus / equals shift octaves");
         Set("Last random seed", lastSeedText);
     }

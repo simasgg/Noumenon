@@ -15,7 +15,8 @@ namespace Noumenon.Engine.Hosting;
 /// a <c>.noumenon</c> file holds, UTF-8 and nothing else, so a project saved in any host, a panel
 /// preset and the other plugin format's state are the same thing. Loading one applies it the way
 /// the standalone loads a preset — parameters, lanes, chords, scale and seed at once while the
-/// audio keeps running, the samples decoded on a worker — and then calls
+/// audio keeps running, the samples decoded on a worker — plus the learned MIDI controllers,
+/// which belong to the project (a preset picked on the panel keeps them); and then calls
 /// <see cref="OnSnapshotApplied"/>, where the format brings the host's view of the parameters up
 /// to date without reporting them as edits. Everything here runs on the host's UI thread except
 /// the sample decoding.
@@ -86,6 +87,7 @@ public abstract class PluginSessionBase
             return false;
         }
 
+        Engine.ApplyMidiMap(state.MidiMap);
         Apply(state, null);
 
         return true;

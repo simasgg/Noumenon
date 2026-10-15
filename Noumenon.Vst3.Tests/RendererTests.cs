@@ -177,6 +177,32 @@ public class RendererTests
         Assert.True(RenderEffect(null) < 0.005f, "with the oscillators down and no input there is nothing to hear");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void The_Sidechain_Reaches_The_Follower_And_Nothing_Else(bool effect)
+    {
+        var sidechain = new float[Block];
+        for (var s = 0; s < Block; s++)
+            sidechain[s] = 0.5f * MathF.Sin(2f * MathF.PI * 375f * s / SampleRate);
+
+        var (session, renderer) = Open(effect);
+        var (plain, plainRenderer) = Open(effect);
+        session.Engine.Parameters.Set(ParamId.EnvFollowerSource, 3);   // Sidechain
+        plain.Engine.Parameters.Set(ParamId.EnvFollowerSource, 3);
+        var otherLeft = new float[Block];
+        var otherRight = new float[Block];
+        for (var i = 0; i < 30; i++)
+        {
+            renderer.Render([], [], sidechain, sidechain, left, right, Block);
+            plainRenderer.Render([], [], otherLeft, otherRight, Block);
+            Assert.Equal(otherLeft, left);
+        }
+
+        Assert.InRange(session.Engine.EnvelopeFollowerValue, 0.3f, 0.55f);
+        Assert.True(plain.Engine.EnvelopeFollowerValue < 1e-4f);
+    }
+
     [Fact]
     public void Steady_State_Render_Does_Not_Allocate()
     {

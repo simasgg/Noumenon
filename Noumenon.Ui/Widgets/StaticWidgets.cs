@@ -1,3 +1,6 @@
+using Noumenon.Engine;
+using Noumenon.Engine.Parameters;
+
 namespace Noumenon.Ui.Widgets;
 
 /// <summary>A caption baked into the static layer.</summary>
@@ -154,5 +157,67 @@ public sealed class LedWidget : Widget
         shown = current;
 
         return true;
+    }
+}
+
+/// <summary>
+/// The top bar's status line: the host's status (device, load, notices) — or, while a control
+/// waits to learn a MIDI controller, an amber prompt naming it, which a click cancels. When a
+/// controller has just been bound it tells the host, so the notice names what was learned.
+/// </summary>
+public sealed class StatusLineWidget : Widget
+{
+    private readonly NoumenonEngine engine;
+    private readonly IEditorHost host;
+    private string shown = "";
+    private bool shownLearning;
+    private int learned;
+
+    public StatusLineWidget(NoumenonEngine engine, IEditorHost host, float x, float y, float width, float height)
+    {
+        this.engine = engine;
+        this.host = host;
+        learned = engine.MidiMap.LearnedCount;
+        Bounds = new RectangleF(x, y, width, height);
+    }
+
+    public override string? Tooltip => shownLearning ? "Waiting for a MIDI controller · click to cancel" : null;
+
+    public override void Draw(Graphics g)
+    {
+        EditorDraw.Display(g, Bounds);
+        EditorDraw.Text(g, shown, RectangleF.Inflate(Bounds, -3, 0), EditorTheme.SmallFont, shownLearning ? EditorTheme.Armed : EditorTheme.TextOnDark, EditorTheme.Left);
+    }
+
+    public override bool Update()
+    {
+        var map = engine.MidiMap;
+        var count = map.LearnedCount;
+        if (count != learned)
+        {
+            learned = count;
+            var controller = map.LastController;
+            if (map.ParameterFor(controller) is { } id)
+                host.Notice($"MIDI CC {controller} → {ParameterTable.Get(id).Name}");
+        }
+
+        var learning = map.Learning;
+        var text = learning is { } waiting ? $"MIDI LEARN: move a controller for {ParameterTable.Get(waiting).Name}" : host.StatusText;
+        if (text == shown && (learning is not null) == shownLearning)
+            return false;
+
+        shown = text;
+        shownLearning = learning is not null;
+
+        return true;
+    }
+
+    public override void MouseDown(PointF p, MouseButtons button, int clicks)
+    {
+        if (button == MouseButtons.Left && engine.MidiMap.Learning is not null)
+        {
+            engine.MidiMap.CancelLearn();
+            Invalidate();
+        }
     }
 }

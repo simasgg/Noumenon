@@ -18,6 +18,7 @@ using Noumenon.TestHarness;
 //     --p1 <st> / --p2 <st>  the P1 / P2 fader values in semitones
 //     --sample <path>      load a WAV/AIFF into sample key 0 and select it
 //     --input <path>       feed a WAV as the live input (the FX identity); shorter files are zero-padded
+//     --sidechain <path>   feed a WAV as the sidechain (only the envelope follower hears it: Env Follower Source = Sidechain)
 //     --midi <path>        play a standard MIDI file into the engine (notes, bend, controllers, aftertouch)
 //     --tempo <bpm>        host tempo, playing (for Host Sync and Restart On Host Play)
 //     --gate <seconds>     fire a MIDI gate at this time (repeatable)
@@ -38,6 +39,7 @@ float? p1 = null;
 float? p2 = null;
 string? samplePath = null;
 string? inputPath = null;
+string? sidechainPath = null;
 string? midiPath = null;
 double? tempo = null;
 var gates = new List<double>();
@@ -74,6 +76,8 @@ for (var i = 0; i < args.Length; i++)
         samplePath = args[++i];
     else if (Is(a, "--input") && hasValue)
         inputPath = args[++i];
+    else if (Is(a, "--sidechain") && hasValue)
+        sidechainPath = args[++i];
     else if (Is(a, "--midi") && hasValue)
         midiPath = args[++i];
     else if (Is(a, "--tempo") && hasValue)
@@ -226,10 +230,24 @@ if (inputPath is not null)
     Console.WriteLine($"Input : {inputPath}  ({input.Length} frames, {(frames < total ? "zero-padded" : "truncated")} to {total})");
 }
 
+float[]? sidechainLeft = null;
+float[]? sidechainRight = null;
+if (sidechainPath is not null)
+{
+    var sidechain = WavFile.Read(sidechainPath);
+    sidechainLeft = new float[total];
+    sidechainRight = new float[total];
+    var frames = Math.Min(total, sidechain.Length);
+    Array.Copy(sidechain.Left, sidechainLeft, frames);
+    Array.Copy(sidechain.Right, sidechainRight, frames);
+    Console.WriteLine($"Side  : {sidechainPath}  ({sidechain.Length} frames, {(frames < total ? "zero-padded" : "truncated")} to {total})");
+}
+
 var midiEvents = midiPath is null ? [] : ReadMidi(midiPath, sampleRate);
 if (midiPath is not null)
     Console.WriteLine($"MIDI  : {midiPath}  ({midiEvents.Count} events, last at {(midiEvents.Count > 0 ? midiEvents[^1].Frame / (double)sampleRate : 0).ToString("0.00", CultureInfo.InvariantCulture)} s)");
 
+var silence = new float[total];
 var gateFrames = gates.Select(g => (long)(g * sampleRate)).OrderBy(g => g).ToList();
 var nextGate = 0;
 var nextTimed = 0;
@@ -262,7 +280,9 @@ for (var pos = 0; pos < total; pos += block)
         Console.WriteLine($"Random: randomized at {(pos / (double)sampleRate).ToString("0.00", CultureInfo.InvariantCulture)} s");
     }
 
-    if (inputLeft is not null && inputRight is not null)
+    if (sidechainLeft is not null && sidechainRight is not null)
+        engine.Process(inputLeft ?? silence, inputRight ?? silence, sidechainLeft, sidechainRight, left, right, pos, count);
+    else if (inputLeft is not null && inputRight is not null)
         engine.Process(inputLeft, inputRight, left, right, pos, count);
     else
         engine.Process(left, right, pos, count);

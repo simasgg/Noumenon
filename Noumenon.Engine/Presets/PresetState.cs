@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Noumenon.Engine.Modulation;
 
 namespace Noumenon.Engine.Presets;
 
@@ -6,8 +7,10 @@ namespace Noumenon.Engine.Presets;
 /// Everything a snapshot holds, as plain data for JSON: parameter values keyed by
 /// <c>ParamId</c> name (a missing key falls back to the table default, so presets survive new
 /// parameters), the lanes' recordings and settings, the user chord memories, the sample
-/// references, the seed, the user scale and the randomizer locks. <see cref="Version"/> is
-/// bumped when the shape changes and <see cref="PresetIo"/> migrates older files.
+/// references, the seed, the user scale, the randomizer locks and the learned MIDI controllers
+/// (which only a host's project state applies; see <c>NoumenonEngine.ApplyMidiMap</c>).
+/// <see cref="Version"/> is bumped when the shape changes and <see cref="PresetIo"/> migrates
+/// older files; a field added with an empty default needs no new version.
 /// </summary>
 public sealed class PresetState
 {
@@ -32,6 +35,8 @@ public sealed class PresetState
     public ScaleState? UserScale { get; set; }
 
     public List<string> Locked { get; set; } = [];
+
+    public List<MidiMapping> MidiMap { get; set; } = [];
 }
 
 public sealed class LaneState

@@ -156,6 +156,26 @@ public abstract partial class PluginEditorHost : IEditorHost
         OnPresetSaved();
     }
 
+    public void MorphToPreset(int index, float seconds)
+    {
+        var all = session.Library.All;
+        if (index < 0 || index >= all.Count)
+            return;
+
+        var preset = all[index];
+        try
+        {
+            session.Engine.Morph(PresetIo.Load(preset.Path), seconds);
+            session.Notice($"Morphing to {preset.Name} over {seconds.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} s (lanes and samples stay)");
+        }
+        catch (Exception ex) when (ex is IOException or FormatException or JsonException or UnauthorizedAccessException or InvalidOperationException)
+        {
+            session.Notice($"Preset not loaded: {ex.Message}");
+        }
+    }
+
+    public void Notice(string text) => session.Notice(text);
+
     public void LoadSample(int key)
     {
         if (control is null)

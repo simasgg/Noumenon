@@ -5,13 +5,15 @@ namespace Noumenon.Ui.Widgets;
 
 /// <summary>
 /// A rotary control bound to one parameter: drag up or down to turn (Shift for fine), the wheel
-/// steps, a double-click restores the default, and a right-click opens the lane menu when the
-/// parameter can carry a lane. The pointer shows what the panel set; the yellow arc shows what
-/// the engine resolved, so a lane or the matrix moving the value is visible, and while a lane
-/// plays the pointer follows it. Under the mouse or while dragged, its value floats where the
-/// caption is (beneath the knob when it has none) as a badge the surface paints above every
-/// other widget, so a neighbour can neither cover nor clip it; a knob with a readout beside it
-/// skips the badge.
+/// steps, a double-click restores the default, and a right-click opens the control menu (the
+/// lane when the parameter can carry one, MIDI learn, the matrix's quick routes). The pointer
+/// shows what the panel set; the yellow arc shows what the engine resolved, so a lane or the
+/// matrix moving the value is visible, and while a lane plays the pointer follows it. Under the
+/// mouse or while dragged, its value floats where the caption is (beneath the knob when it has
+/// none) as a badge the surface paints above every other widget, so a neighbour can neither
+/// cover nor clip it; a knob with a readout beside it skips the badge. A dot at the upper left
+/// says a matrix slot moves it, one at the upper right that a MIDI controller does, and an amber
+/// ring that it is waiting to learn one.
 /// </summary>
 public sealed class KnobWidget : Widget
 {
@@ -33,6 +35,7 @@ public sealed class KnobWidget : Widget
     private float shownArc = float.NaN;
     private int shownLane = -1;
     private ParamId shownId;
+    private int shownLinks = -1;
     private RectangleF drawnBadge;
 
     /// <param name="x">Left edge of the knob circle.</param>
@@ -72,7 +75,7 @@ public sealed class KnobWidget : Widget
         }
     }
 
-    public override string? Tooltip => $"{Binding.Info.Name}: {Binding.ValueText}{(Binding.Lane is null ? "" : "\n" + Binding.LaneText + "\nright-click: lane menu")}\ndouble-click: default";
+    public override string? Tooltip => $"{Binding.Info.Name}: {Binding.ValueText}{(Binding.Lane is null ? "" : "\n" + Binding.LaneText)}\nright-click: {(Binding.Lane is null ? "" : "lane, ")}MIDI learn, modulate · double-click: default";
 
     private RectangleF KnobRect => new(Bounds.X + (Bounds.Width - size) / 2f, Bounds.Y + (labelBelow ? 0f : LabelHeight), size, size);
 
@@ -86,6 +89,7 @@ public sealed class KnobWidget : Widget
         if (label is not null && !ShowingValue)
             EditorDraw.Text(g, label, LabelRect, EditorTheme.LabelFont, EditorTheme.Text, EditorTheme.Center);
 
+        DrawLinks(g, Binding.Links);
         var lane = Binding.Lane;
         if (lane is null || LaneState(lane) == 0)
             return;
@@ -143,13 +147,15 @@ public sealed class KnobWidget : Widget
         var pointer = bound.LanePlaying && !dragging ? bound.ResolvedNormalized : bound.Normalized;
         var arc = bound.ResolvedNormalized;
         var laneState = bound.Lane is { } lane ? LaneState(lane) : 0;
-        if (pointer == shownPointer && arc == shownArc && laneState == shownLane && bound.Id == shownId)
+        var links = bound.Links;
+        if (pointer == shownPointer && arc == shownArc && laneState == shownLane && bound.Id == shownId && links == shownLinks)
             return false;
 
         shownPointer = pointer;
         shownArc = arc;
         shownLane = laneState;
         shownId = bound.Id;
+        shownLinks = links;
 
         return true;
     }
@@ -158,9 +164,7 @@ public sealed class KnobWidget : Widget
     {
         if (button == MouseButtons.Right)
         {
-            if (Binding.Lane is not null)
-                ShowMenu(LaneMenu.Build(Binding), p);
-
+            ShowMenu(ControlMenu.Build(Binding, Commit), p);
             return;
         }
 
@@ -209,6 +213,25 @@ public sealed class KnobWidget : Widget
     {
         Commit(() => Binding.Step(delta > 0 ? 1 : -1));
         Invalidate();
+    }
+
+    private void DrawLinks(Graphics g, int links)
+    {
+        if (links == 0)
+            return;
+
+        var knob = KnobRect;
+        if ((links & ParamBinding.LinkLearning) != 0)
+        {
+            using var ring = new Pen(EditorTheme.Armed, 1.5f);
+            g.DrawEllipse(ring, RectangleF.Inflate(knob, 0.5f, 0.5f));
+        }
+
+        if ((links & ParamBinding.LinkModulated) != 0)
+            EditorDraw.Led(g, new RectangleF(knob.X, knob.Y, 4f, 4f), true, EditorTheme.Accent);
+
+        if ((links & ParamBinding.LinkMidi) != 0)
+            EditorDraw.Led(g, new RectangleF(knob.Right - 4f, knob.Y, 4f, 4f), true, EditorTheme.TextLight);
     }
 
     /// <summary>0 nothing to show, 1 armed, 2 playing, 3 recording, 4 holds a loop but is static.</summary>

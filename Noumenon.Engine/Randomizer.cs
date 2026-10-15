@@ -23,7 +23,9 @@ public enum RandomizeScope
 /// can be written down and recalled. Amount scales how far it strays from a tonal drone — at 1 it
 /// allows MF's anything-goes chaos (wild pitches, muted slots, odd filter modes), at small values
 /// it keeps every slot on a root-plus-intervals voicing with a few cents of detune. Scopes pick
-/// the oscillators (slots, section filters, the combine stage), the sampler, the effect chain or
+/// the oscillators (slots, section filters, the combine stage), the sampler (its Granular and
+/// Stretch settings draw from a stream of their own, so a seed written down before they existed
+/// still gives the same patch), the effect chain or
 /// the lanes (fresh smooth random loops on a random subset of faders); All takes everything, which
 /// is MF's Randomize plus living faders. Locked parameters are never touched, and
 /// <see cref="Mutate"/> nudges the current patch instead of replacing it. Runs on the UI thread —
@@ -40,6 +42,13 @@ public static class Randomizer
     ];
 
     private static readonly float[] Directions = [1f, 1f, 1f, -1f, -1f, 0.5f, -0.5f, 2f, -2f];
+
+    private const ulong SampleModeStream = 0xC2B2AE3D27D4EB4FUL;
+    private const ulong LateLaneStream = 0x165667B19E3779F9UL;
+
+    // Parameters that became lane-capable after seeds were first written down: their loops draw
+    // from a stream of their own, so every other lane of an older seed comes out as it did.
+    private static readonly HashSet<ParamId> LateLanes = [ParamId.GrainSize, ParamId.GrainDensity, ParamId.GrainPosition, ParamId.GrainSpray, ParamId.StretchAmount, ParamId.GrainPitchSpread];
 
     public static void Randomize(NoumenonEngine engine, ulong seed, RandomizeScope scope = RandomizeScope.All, float amount = 1f)
     {
@@ -63,12 +72,17 @@ public static class Randomizer
 
         if (scope is RandomizeScope.All or RandomizeScope.Effects)
             RandomizeEffects(bank, rng, amount, locks);
+
+        // The sample modes came later: their own stream keeps every older seed's patch unchanged.
+        if (scope is RandomizeScope.All or RandomizeScope.Sampler)
+            RandomizeSampleModes(bank, new Xoshiro128(seed ^ SampleModeStream), amount, locks);
     }
 
     /// <summary>Gives a random subset of the lanes a fresh smooth loop around their current value and clears the rest.</summary>
     public static void RandomizeLanes(LaneSet lanes, ParameterBank bank, ulong seed, float amount = 1f, bool[]? locks = null)
     {
-        var rng = new Xoshiro128(seed);
+        var main = new Xoshiro128(seed);
+        var late = new Xoshiro128(seed ^ LateLaneStream);
         amount = DspHelper.Clamp01(amount);
         var probability = 0.3f + 0.4f * amount;
         foreach (var lane in lanes.All)
@@ -76,6 +90,7 @@ public static class Randomizer
             if (locks is not null && locks[(int)lane.Id])
                 continue;
 
+            var rng = LateLanes.Contains(lane.Id) ? late : main;
             if (!rng.Chance(probability))
             {
                 lane.Clear();
@@ -207,6 +222,19 @@ public static class Randomizer
         Set(bank, locks, ParamId.SamplerLoopCrossfade, LogUniform(rng, 5f, 300f));
         Set(bank, locks, ParamId.SamplerAmp, rng.NextRange(0.2f, 0.8f));
         Set(bank, locks, ParamId.SamplerAmDepth, rng.NextRange(0f, 0.5f * amount));
+    }
+
+    /// <summary>The Granular and Stretch settings (the mode itself is the player's choice and stays).</summary>
+    private static void RandomizeSampleModes(ParameterBank bank, Xoshiro128 rng, float amount, bool[]? locks)
+    {
+        Set(bank, locks, ParamId.GrainSize, LogUniform(rng, 20f, 400f));
+        Set(bank, locks, ParamId.GrainDensity, LogUniform(rng, 3f, 40f));
+        Set(bank, locks, ParamId.GrainPosition, rng.NextFloat());
+        Set(bank, locks, ParamId.GrainSpray, rng.NextRange(0f, 0.6f * amount));
+        Set(bank, locks, ParamId.GrainPitchSpread, rng.Chance(0.3f * amount) ? rng.NextRange(0f, 7f * amount) : 0f);
+        Set(bank, locks, ParamId.GrainWindow, rng.NextRange(0f, 0.8f));
+        Set(bank, locks, ParamId.GrainWidth, rng.NextRange(0.2f, 1f));
+        Set(bank, locks, ParamId.StretchAmount, LogUniform(rng, 2f, 40f));
     }
 
     private static void RandomizeEffects(ParameterBank bank, Xoshiro128 rng, float amount, bool[]? locks)

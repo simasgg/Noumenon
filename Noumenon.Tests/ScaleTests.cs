@@ -14,6 +14,31 @@ public class ScaleTests
     }
 
     [Fact]
+    public void An_Active_Scale_Quantizes_Without_Allocating()
+    {
+        // Quantize runs for every slot, voice and P fader at each control tick; it once walked an
+        // interface enumerator and allocated whenever a scale other than 12-TET was active.
+        var engine = new Noumenon.Engine.NoumenonEngine();
+        engine.Parameters.Set(ParamId.Scale, ParameterTable.Scales.ToList().IndexOf("Just Major"));
+        engine.Parameters.Set(ParamId.P1Midi, true);
+        engine.Prepare(48000, 512);
+        engine.Reset(1);
+        engine.Midi.NoteOn(61, 100);
+        var l = new float[512];
+        var r = new float[512];
+        for (var k = 0; k < 20; k++)
+            engine.Process(l, r, l.Length);
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var k = 0; k < 200; k++)
+            engine.Process(l, r, l.Length);
+
+        Assert.Equal(0, GC.GetAllocatedBytesForCurrentThread() - before);
+        Assert.Equal(60f, engine.ResochordNote(2), 3);   // voice 3's C4 is in the scale
+        Assert.Equal(0f, engine.P1, 3);                  // C# is nearer C (100 ct) than the just D (204 ct)
+    }
+
+    [Fact]
     public void Built_In_Scales_Match_The_Parameter_List()
     {
         Assert.Equal(ParameterTable.Scales.Count - 1, Scale.BuiltIn.Count);   // the last entry is "User"

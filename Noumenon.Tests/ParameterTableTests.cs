@@ -138,7 +138,7 @@ public class ParameterTableTests
         Assert.Equal(1f, bank.Get(ParamId.OscA1Level));
 
         bank.Set(ParamId.OscA1Wave, 99);
-        Assert.Equal((int)Waveform.NoiseSh, bank.GetInt(ParamId.OscA1Wave));
+        Assert.Equal((int)Waveform.Sub, bank.GetInt(ParamId.OscA1Wave));
 
         bank.SetNormalized(ParamId.SectionACutoff, 1f);
         Assert.Equal(20000f, bank.Get(ParamId.SectionACutoff), 1);
@@ -160,6 +160,29 @@ public class ParameterTableTests
         Assert.True(ParameterTable.Get(ParamId.P1Value).IsLaneCapable);
         Assert.True(ParameterTable.Get(ParamId.SpinTime1).IsLaneCapable);
         Assert.False(ParameterTable.Get(ParamId.OscA1Wave).IsLaneCapable);
+    }
+
+    [Fact]
+    public void Phase_9_Choice_Lists_Match_Their_Enums()
+    {
+        Assert.Equal(Enum.GetNames<Noumenon.Dsp.Sampler.SampleMode>(), ParameterTable.SamplerModes);
+        Assert.Equal(Enum.GetNames<Noumenon.Dsp.Sampler.GrainScan>(), ParameterTable.GrainScans);
+        Assert.Equal(Enum.GetNames<Noumenon.Dsp.Sampler.StretchWindow>(), ParameterTable.StretchWindows);
+        Assert.Equal(Enum.GetNames<Noumenon.Engine.Scales.ChordType>(), ParameterTable.ChordTypes);
+        Assert.Equal(Enum.GetNames<Noumenon.Engine.Scales.ChordVoicing>(), ParameterTable.ChordVoicings);
+        Assert.Equal(Enum.GetValues<Noumenon.Engine.Modulation.FollowerSource>().Length, ParameterTable.FollowerSources.Count);
+        Assert.Equal("Wavetable", ParameterTable.Waveforms[(int)Waveform.Wavetable]);
+        Assert.Equal("Sub", ParameterTable.Waveforms[(int)Waveform.Sub]);
+        Assert.Equal(ParamId.ChordSeqStep1, ParameterTable.ChordSeqStep(0));
+        Assert.Equal(ParamId.ChordSeqStep8, ParameterTable.ChordSeqStep(ParameterTable.ChordSeqStepCount - 1));
+        Assert.Equal(ParameterTable.ChordDegrees.Count - 1, (int)ParameterTable.Get(ParamId.ChordSeqStep1).Max);
+    }
+
+    [Fact]
+    public void The_Grain_Controls_Can_Carry_Lanes()
+    {
+        foreach (var id in new[] { ParamId.GrainSize, ParamId.GrainDensity, ParamId.GrainPosition, ParamId.GrainSpray, ParamId.GrainPitchSpread, ParamId.StretchAmount })
+            Assert.True(ParameterTable.Get(id).IsLaneCapable, $"{id} should be lane-capable");
     }
 
     [Fact]

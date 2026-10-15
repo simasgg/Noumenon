@@ -78,7 +78,7 @@ public sealed class LaneOverviewWidget : Widget
         var lane = rows[index];
         if (button == MouseButtons.Right)
         {
-            ShowMenu(LaneMenu.Build(new ParamBinding(engine, lane.Id)), p);
+            ShowMenu(ControlMenu.Build(new ParamBinding(engine, lane.Id), Commit), p);
             return;
         }
 

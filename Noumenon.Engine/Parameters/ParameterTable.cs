@@ -93,7 +93,7 @@ public static class ParameterTable
     public const int ModSlotParamCount = 3;
 
     /// <summary>Choice names for <see cref="OscParam.Wave"/>; the order is the <c>Noumenon.Dsp.Oscillators.Waveform</c> enum.</summary>
-    public static readonly IReadOnlyList<string> Waveforms = ["Sine", "Triangle", "Saw", "Square", "Pulse", "Bipolar Pulse", "LP Noise", "S&H Noise"];
+    public static readonly IReadOnlyList<string> Waveforms = ["Sine", "Triangle", "Saw", "Square", "Pulse", "Bipolar Pulse", "LP Noise", "S&H Noise", "Wavetable", "Sub"];
 
     /// <summary>Choice names for the section and master filter modes; the order is the <c>Noumenon.Dsp.Filters.FilterType</c> enum.</summary>
     public static readonly IReadOnlyList<string> FilterTypes = ["LP", "BP", "HP"];
@@ -124,6 +124,28 @@ public static class ParameterTable
     public static readonly IReadOnlyList<string> ScopeModes = ["Output", "Sections", "Spectrum"];
     public static readonly IReadOnlyList<string> MatrixSources = ["None", "P1", "P2", "LFO 1", "LFO 2", "LFO 3", "Env Follower", "Velocity", "Aftertouch", "Mod Wheel", "CC", "Macro 1", "Macro 2", "Macro 3", "Macro 4"];
 
+    /// <summary>Choice names for <see cref="ParamId.GrainScan"/>; the order is the <c>Noumenon.Dsp.Sampler.GrainScan</c> enum.</summary>
+    public static readonly IReadOnlyList<string> GrainScans = ["Free", "Locked"];
+
+    /// <summary>Choice names for <see cref="ParamId.StretchWindow"/>; the order is the <c>Noumenon.Dsp.Sampler.StretchWindow</c> enum.</summary>
+    public static readonly IReadOnlyList<string> StretchWindows = ["Short", "Medium", "Long"];
+
+    /// <summary>What the envelope follower listens to; the order is the <c>Noumenon.Engine.Modulation.FollowerSource</c> enum.</summary>
+    public static readonly IReadOnlyList<string> FollowerSources = ["Sample+Input", "Sample", "Input", "Sidechain", "Sections", "Output"];
+
+    /// <summary>The chord sequencer's chord shapes; the order is the <c>Noumenon.Engine.Scales.ChordType</c> enum.</summary>
+    public static readonly IReadOnlyList<string> ChordTypes = ["Triad", "Seventh", "Ninth", "Sus2", "Sus4", "Add9", "Quartal", "Fifths", "Cluster"];
+
+    /// <summary>How a generated chord spreads over the six voices; the order is the <c>Noumenon.Engine.Scales.ChordVoicing</c> enum.</summary>
+    public static readonly IReadOnlyList<string> ChordVoicings = ["Close", "Open", "Wide"];
+
+    /// <summary>A sequencer step: Hold keeps the previous chord, I–VII build one on that degree of the scale.</summary>
+    public static readonly IReadOnlyList<string> ChordDegrees = ["Hold", "I", "II", "III", "IV", "V", "VI", "VII"];
+
+    public static readonly IReadOnlyList<string> SequencerRootTargets = ["None", "P1", "P2"];
+
+    public const int ChordSeqStepCount = 8;
+
     // The init patch's oscillator voicing: a low root with fifths and octaves in A, the same notes a
     // few cents off in B so the sum beats slowly and the ring-mod path adds its grit. Slot layout
     // follows the MF panel (A: sine ×3, tri, bipolar pulse, LP noise; B: sine ×2, tri, pulse,
@@ -135,6 +157,9 @@ public static class ParameterTable
 
     private static readonly int[] DefaultResoNote = [48, 55, 60, 64, 67, 72];
     private static readonly float[] DefaultResoPan = [-0.6f, 0.6f, -0.3f, 0.3f, -0.8f, 0.8f];
+
+    // The chord sequencer's default walk: I–vi–IV–V, then I–iii–IV–V when all eight steps run.
+    private static readonly int[] DefaultChordSteps = [1, 6, 4, 5, 1, 3, 4, 5];
 
     public static readonly IReadOnlyList<ParamInfo> All = Build();
 
@@ -166,6 +191,7 @@ public static class ParameterTable
         ParamGroup.ModWheel => "Mod Wheel",
         ParamGroup.Global => "Global",
         ParamGroup.ModMatrix => "Mod Matrix",
+        ParamGroup.ChordSequencer => "Chord Sequencer",
         _ => group.ToString(),
     };
 
@@ -201,6 +227,8 @@ public static class ParameterTable
     public static ParamId Lfo(int index, LfoParam param) => ParamId.Lfo1Rate + index * LfoParamCount + (int)param;
 
     public static ParamId ModSlot(int slot, ModSlotParam param) => ParamId.ModSlot1Source + slot * ModSlotParamCount + (int)param;
+
+    public static ParamId ChordSeqStep(int step) => ParamId.ChordSeqStep1 + step;
 
     private static IReadOnlyList<ParamInfo> Build()
     {
@@ -272,11 +300,11 @@ public static class ParameterTable
         rows.Add(Toggle(ParamId.SamplerRetrigger, ParamGroup.Sampler, "Sample Retrigger", "Smp Retr", false));
         rows.Add(Linear(ParamId.SamplerInputMix, ParamGroup.Sampler, "Sample/Input Mix", "Smp<>In", 0f, 1f, 0f, Units.None, ParamFlags.Lane));
         rows.Add(Linear(ParamId.SamplerAmDepth, ParamGroup.Sampler, "Sample AM Depth", "Smp AM", 0f, 1f, 0f, Units.None, ParamFlags.Addition));
-        rows.Add(Log(ParamId.GrainSize, ParamGroup.Sampler, "Grain Size", "Grn Size", 5f, 500f, 80f, Units.Milliseconds, ParamFlags.Addition));
-        rows.Add(Log(ParamId.GrainDensity, ParamGroup.Sampler, "Grain Density", "Grn Dens", 1f, 64f, 8f, Units.Hertz, ParamFlags.Addition));
-        rows.Add(Linear(ParamId.GrainPosition, ParamGroup.Sampler, "Grain Position", "Grn Pos", 0f, 1f, 0f, Units.Percent, ParamFlags.Addition));
-        rows.Add(Linear(ParamId.GrainSpray, ParamGroup.Sampler, "Grain Spray", "Grn Spry", 0f, 1f, 0.1f, Units.Percent, ParamFlags.Addition));
-        rows.Add(Log(ParamId.StretchAmount, ParamGroup.Sampler, "Stretch Amount", "Stretch", 1f, 100f, 8f, Units.Multiplier, ParamFlags.Addition));
+        rows.Add(Log(ParamId.GrainSize, ParamGroup.Sampler, "Grain Size", "Grn Size", 5f, 500f, 80f, Units.Milliseconds, ParamFlags.Addition | ParamFlags.Lane));
+        rows.Add(Log(ParamId.GrainDensity, ParamGroup.Sampler, "Grain Density", "Grn Dens", 1f, 64f, 8f, Units.Hertz, ParamFlags.Addition | ParamFlags.Lane));
+        rows.Add(Linear(ParamId.GrainPosition, ParamGroup.Sampler, "Grain Position", "Grn Pos", 0f, 1f, 0f, Units.Percent, ParamFlags.Addition | ParamFlags.Lane));
+        rows.Add(Linear(ParamId.GrainSpray, ParamGroup.Sampler, "Grain Spray", "Grn Spry", 0f, 1f, 0.1f, Units.Percent, ParamFlags.Addition | ParamFlags.Lane));
+        rows.Add(Log(ParamId.StretchAmount, ParamGroup.Sampler, "Stretch Amount", "Stretch", 1f, 100f, 8f, Units.Multiplier, ParamFlags.Addition | ParamFlags.Lane));
 
         rows.Add(Toggle(ParamId.MasterFilterOn, ParamGroup.MasterFilter, "Master Filter On", "MF On", true));
         rows.Add(Linear(ParamId.MasterFilterMorph, ParamGroup.MasterFilter, "Master Filter LP-HP", "MF LP-HP", 0f, 1f, 0f, Units.None));
@@ -404,6 +432,28 @@ public static class ParameterTable
         rows.Add(Toggle(ParamId.Pause, ParamGroup.Transport, "Pause", "Pause", false, ParamFlags.Addition));
         rows.Add(Linear(ParamId.PauseFade, ParamGroup.Transport, "Mute Fade", "MuteFade", 0f, 10f, 0f, Units.Seconds, ParamFlags.Addition));
         rows.Add(Choice(ParamId.ScopeMode, ParamGroup.Scope, "Scope Mode", "ScpMode", ScopeModes, 0, ParamFlags.Addition));
+
+        // Phase 9. The granular extras: a random pitch per grain, the window from Hann to a flat-topped
+        // Tukey, whether grains come from Position or follow the playhead, and the random pan.
+        rows.Add(Linear(ParamId.GrainPitchSpread, ParamGroup.Sampler, "Grain Pitch Spread", "Grn PSpr", 0f, 12f, 0f, Units.Semitones, ParamFlags.Addition | ParamFlags.Lane));
+        rows.Add(Linear(ParamId.GrainWindow, ParamGroup.Sampler, "Grain Window", "Grn Win", 0f, 1f, 0f, Units.None, ParamFlags.Addition));
+        rows.Add(Choice(ParamId.GrainScan, ParamGroup.Sampler, "Grain Scan", "Grn Scan", GrainScans, 0, ParamFlags.Addition));
+        rows.Add(Linear(ParamId.GrainWidth, ParamGroup.Sampler, "Grain Width", "Grn Wdth", 0f, 1f, 0.5f, Units.None, ParamFlags.Addition));
+        rows.Add(Choice(ParamId.StretchWindow, ParamGroup.Sampler, "Stretch Window", "StrchWin", StretchWindows, 2, ParamFlags.Addition));
+        rows.Add(Integer(ParamId.WavetableKey, ParamGroup.Sampler, "Wavetable Key", "WT Key", 0, 127, 0, Units.None, ParamFlags.Addition));
+        rows.Add(Choice(ParamId.EnvFollowerSource, ParamGroup.ModMatrix, "Env Follower Source", "Env Src", FollowerSources, 0, ParamFlags.Addition));
+        rows.Add(Linear(ParamId.EnvFollowerGain, ParamGroup.ModMatrix, "Env Follower Gain", "Env Gain", -24f, 24f, 0f, Units.Decibels, ParamFlags.Addition));
+        rows.Add(Integer(ParamId.MatrixCc, ParamGroup.ModMatrix, "Matrix CC", "Mtx CC", 0, 127, 74, Units.None, ParamFlags.Addition));
+
+        rows.Add(Toggle(ParamId.ChordSeqOn, ParamGroup.ChordSequencer, "Chord Seq On", "Seq On", false, ParamFlags.Addition));
+        rows.Add(Integer(ParamId.ChordSeqSteps, ParamGroup.ChordSequencer, "Chord Seq Steps", "SeqSteps", 1, ChordSeqStepCount, 4, Units.None, ParamFlags.Addition));
+        rows.Add(Log(ParamId.ChordSeqStepTime, ParamGroup.ChordSequencer, "Chord Seq Step Time", "SeqTime", 0.25f, 60f, 8f, Units.Seconds, ParamFlags.Addition));
+        rows.Add(Choice(ParamId.ChordSeqType, ParamGroup.ChordSequencer, "Chord Seq Type", "SeqType", ChordTypes, 0, ParamFlags.Addition));
+        rows.Add(Choice(ParamId.ChordSeqVoicing, ParamGroup.ChordSequencer, "Chord Seq Voicing", "SeqVoice", ChordVoicings, 1, ParamFlags.Addition));
+        rows.Add(Integer(ParamId.ChordSeqOctave, ParamGroup.ChordSequencer, "Chord Seq Octave", "SeqOct", 1, 6, 3, Units.None, ParamFlags.Addition));
+        rows.Add(Choice(ParamId.ChordSeqRoot, ParamGroup.ChordSequencer, "Chord Seq Root", "SeqRoot", SequencerRootTargets, 0, ParamFlags.Addition));
+        for (var step = 0; step < ChordSeqStepCount; step++)
+            rows.Add(Choice(ChordSeqStep(step), ParamGroup.ChordSequencer, $"Chord Seq Step {step + 1}", $"Seq St{step + 1}", ChordDegrees, DefaultChordSteps[step], ParamFlags.Addition));
 
         if (rows.Count != ids.Length)
             throw new InvalidOperationException($"ParameterTable has {rows.Count} rows but ParamId has {ids.Length} members.");

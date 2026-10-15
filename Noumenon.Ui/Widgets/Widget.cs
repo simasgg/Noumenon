@@ -94,11 +94,14 @@ public interface IFileDropTarget
 
 /// <summary>
 /// A widget's link to one parameter: the bank value the panel sets, the resolved value the
-/// engine plays (a lane or the matrix can move it), both as real units and normalized, and the
-/// parameter's lane when it has one.
+/// engine plays (a lane or the matrix can move it), both as real units and normalized, the
+/// parameter's lane when it has one, and whether the matrix or a MIDI controller reaches it.
 /// </summary>
 public sealed class ParamBinding
 {
+    private int midiVersion = -1;
+    private int controller = -1;
+
     public ParamBinding(NoumenonEngine engine, ParamId id)
     {
         Engine = engine;
@@ -139,6 +142,45 @@ public sealed class ParamBinding
     public string ResolvedText => Info.Format(Resolved);
 
     public void Reset() => Value = Info.Default;
+
+    /// <summary>What reaches the parameter besides the panel: <see cref="LinkModulated"/> (a matrix slot aims at it), <see cref="LinkMidi"/> (a controller is bound), <see cref="LinkLearning"/> (one is awaited).</summary>
+    public int Links
+    {
+        get
+        {
+            var links = 0;
+            var bank = Engine.Parameters;
+            var target = (int)Id + 1;
+            for (var slot = 0; slot < ParameterTable.ModSlotCount; slot++)
+            {
+                if (bank.GetInt(ParameterTable.ModSlot(slot, ModSlotParam.Target)) == target && bank.GetInt(ParameterTable.ModSlot(slot, ModSlotParam.Source)) > 0)
+                {
+                    links |= LinkModulated;
+                    break;
+                }
+            }
+
+            var map = Engine.MidiMap;
+            var version = map.Version;
+            if (version != midiVersion)
+            {
+                midiVersion = version;
+                controller = map.ControllerFor(Id);
+            }
+
+            if (controller >= 0)
+                links |= LinkMidi;
+
+            if (map.Learning == Id)
+                links |= LinkLearning;
+
+            return links;
+        }
+    }
+
+    public const int LinkModulated = 1;
+    public const int LinkMidi = 2;
+    public const int LinkLearning = 4;
 
     /// <summary>One wheel notch: a step for discrete parameters, two percent of the range otherwise (a tenth of that with Shift).</summary>
     public void Step(int notches)

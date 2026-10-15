@@ -6,7 +6,8 @@ namespace Noumenon.Ui.Widgets;
 /// <summary>
 /// A numeric readout bound to one parameter, as MF shows pitches and fine offsets: drag up or
 /// down to change it (whole steps for integers, Shift for fine), the wheel steps, a double-click
-/// restores the default and the right-click menu types an exact value. Shows the resolved value,
+/// restores the default and the right-click menu types an exact value (beside the lane, MIDI learn and
+/// modulation items every control has). Shows the resolved value,
 /// so a lane on a pitch readout is visible, and takes a caption to its left when asked.
 /// </summary>
 public sealed class NumberWidget : Widget
@@ -30,7 +31,7 @@ public sealed class NumberWidget : Widget
         Bounds = new RectangleF(x - this.labelWidth, y, width + this.labelWidth, height);
     }
 
-    public override string? Tooltip => $"{binding.Info.Name}: {binding.ValueText}{(binding.Lane is null ? "" : "\n" + binding.LaneText)}\ndrag: change · wheel: step · double-click: default\nright-click: {(binding.Lane is null ? "type a value" : "lane menu, type a value")}";
+    public override string? Tooltip => $"{binding.Info.Name}: {binding.ValueText}{(binding.Lane is null ? "" : "\n" + binding.LaneText)}\ndrag: change · wheel: step · double-click: default\nright-click: type a value, {(binding.Lane is null ? "" : "lane, ")}MIDI learn, modulate";
 
     private RectangleF Box => new(Bounds.X + labelWidth, Bounds.Y, Bounds.Width - labelWidth, Bounds.Height);
 
@@ -59,7 +60,7 @@ public sealed class NumberWidget : Widget
     {
         if (button == MouseButtons.Right)
         {
-            var menu = LaneMenu.Build(binding);
+            var menu = ControlMenu.Build(binding, Commit);
             menu.Items.Insert(menu.Items.Count - 1, new ToolStripMenuItem("Type a value…", null, (_, _) => TypeValue()));
             ShowMenu(menu, p);
             return;

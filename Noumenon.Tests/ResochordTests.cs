@@ -137,24 +137,29 @@ public class ResochordTests
     public void Process_Does_Not_Allocate_Across_Chord_And_Pitch_Changes()
     {
         var r = Make();
-        for (var k = 0; k < 20; k++)
-            Ring(r, 512);
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var k = 0; k < 400; k++)
+        void Run(int blocks)
         {
-            r.SetChord(k % ChordTable.Count);
-            r.SetPitchOffset((k & 1) == 0 ? 0f : 7f);
-            r.SetGlobalFeedback(0.5f + 0.4f * (k & 1), 0f);
-            r.SetVoice(0, 48f + (k & 3), 0.9f, 0.3f + 0.1f * (k & 1), 0.8f, (k & 1) == 0 ? -0.5f : 0.5f);
-            for (var i = 0; i < 512; i++)
+            for (var k = 0; k < blocks; k++)
             {
-                var l = 0.1f;
-                var right = 0.1f;
-                r.Process(ref l, ref right);
+                r.SetChord(k % ChordTable.Count);
+                r.SetPitchOffset((k & 1) == 0 ? 0f : 7f);
+                r.SetGlobalFeedback(0.5f + 0.4f * (k & 1), 0f);
+                r.SetVoice(0, 48f + (k & 3), 0.9f, 0.3f + 0.1f * (k & 1), 0.8f, (k & 1) == 0 ? -0.5f : 0.5f);
+                for (var i = 0; i < 512; i++)
+                {
+                    var l = 0.1f;
+                    var right = 0.1f;
+                    r.Process(ref l, ref right);
+                }
             }
         }
 
+        // Steady state only: the first pass may run ChordTable's static initializer, depending on
+        // which test touched it first.
+        Run(40);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Run(400);
         var after = GC.GetAllocatedBytesForCurrentThread();
 
         Assert.Equal(0, after - before);

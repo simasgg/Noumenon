@@ -38,6 +38,13 @@ namespace Noumenon.Engine;
 /// switch crossfades the two routings so a swap never clicks. With Engine Rate at 2× the whole
 /// graph runs at twice the host rate between a pair of half-band resamplers; the rate is read in
 /// <see cref="Prepare"/>, so a host re-prepares to change it.
+///
+/// Around the graph: the envelope follower (the AM route's control and a matrix source) listens
+/// to the source its parameter picks — the sampler, the live input, a separate sidechain input,
+/// the sections or the output; learned MIDI controllers (<see cref="MidiMap"/>) write their
+/// parameters at the tick; the chord sequencer, on the lane clock, gives the Resochord a chord
+/// built on a degree of the scale and can hand its root to P1 or P2; Wavetable slots read the
+/// table of the sample on the Wavetable Key.
 /// </summary>
 public sealed class NoumenonEngine
 {
@@ -47,6 +54,7 @@ public sealed class NoumenonEngine
 
     private const ulong SectionSeedStride = 0x2545F4914F6CDD1DUL;
     private const ulong MatrixSeedStride = 0x9E3779B97F4A7C15UL;
+    private const ulong SamplerSeedStride = 0xD1B54A32D192ED03UL;
     private const float AmSmoothSeconds = 0.02f;
     private const float OrderSwitchSeconds = 0.02f;
     private const float DcCutoffHz = 5f;
@@ -82,6 +90,8 @@ public sealed class NoumenonEngine
     private readonly PitchFader pitch1 = new();
     private readonly PitchFader pitch2 = new();
     private readonly PresetMorph morph = new();
+    private readonly ChordSequencer sequencer = new();
+    private readonly float[] sequencerNotes = new float[Resochord.VoiceCount];
     private readonly float[] resochordNotes = new float[Resochord.VoiceCount];
     private readonly float[] oscillatorHz = new float[ParameterTable.SectionCount * ParameterTable.SlotsPerSection];
     private readonly float[][] userChords = new float[UserChordCount][];
@@ -99,6 +109,9 @@ public sealed class NoumenonEngine
     private ulong seed = 1;
     private float previousReverbLeft;
     private float previousReverbRight;
+    private float previousOutput;
+    private FollowerSource followerSource;
+    private float followerGain = 1f;
     private float peakRelease;
     private float outputPeakLeft;
     private float outputPeakRight;
@@ -122,6 +135,11 @@ public sealed class NoumenonEngine
     public LaneClock Clock { get; } = new();
 
     public MidiInput Midi { get; } = new();
+
+    /// <summary>The learned controllers; instrument setup, not part of a preset's sound (see <see cref="ApplyMidiMap"/>).</summary>
+    public MidiMap MidiMap { get; } = new();
+
+    public ChordSequencer Sequencer => sequencer;
 
     /// <summary>The post-Drift signal for the XY display.</summary>
     public ScopeBuffer Scope { get; } = new();
@@ -156,7 +174,24 @@ public sealed class NoumenonEngine
     /// <summary>Where the mute fade is: 1 running, 0 silent, in between while fading either way.</summary>
     public float FadeLevel => output.FadeLevel;
 
-    public double SamplePosition => sampler.Position;
+    /// <summary>Where the sampler's active mode is reading, in frames of the selected sample.</summary>
+    public double SamplePosition => sampler.DisplayPosition;
+
+    public SampleMode SampleMode => sampler.Mode;
+
+    public int ActiveGrains => sampler.Granular.ActiveGrains;
+
+    /// <summary>The Stretch mode's window in points at the engine rate.</summary>
+    public int StretchFrameSize => sampler.Stretch.FrameSize;
+
+    /// <summary>Copies the sounding grains' positions (fractions of the sample) and window levels for a display; returns how many.</summary>
+    public int CopyGrains(float[] positions, float[] levels) => sampler.Granular.CopyGrains(positions, levels);
+
+    /// <summary>A modulation source as the matrix last read it, by its index in the source list (bipolar sources −1..1, the rest 0..1).</summary>
+    public float ModulationSource(int source) => matrix.Source(source);
+
+    /// <summary>The chord sequencer's current chord, written each tick while it runs.</summary>
+    public float SequencerNote(int voice) => Volatile.Read(ref sequencerNotes[voice]);
 
     public bool IsMorphing => morph.IsActive;
 
@@ -205,6 +240,30 @@ public sealed class NoumenonEngine
 
         SetUserChord(slot, notes);
     }
+
+    /// <summary>
+    /// The scale-aware chord generator on the user memories: User 1–7 become the chords on degrees
+    /// I–VII of the active scale and root, User 8 degree I an octave up, all with the chord
+    /// sequencer's type, voicing and octave. Chord select (P1/P2) and the chord list then play the key.
+    /// </summary>
+    public void FillUserChordsFromScale()
+    {
+        var bank = Parameters;
+        var scale = ActiveScale;
+        var root = bank.GetInt(ParamId.ScaleRoot);
+        var type = (ChordType)bank.GetInt(ParamId.ChordSeqType);
+        var voicing = (ChordVoicing)bank.GetInt(ParamId.ChordSeqVoicing);
+        var octave = bank.GetInt(ParamId.ChordSeqOctave);
+        var notes = new float[Resochord.VoiceCount];
+        for (var slot = 0; slot < UserChordCount; slot++)
+        {
+            ChordGenerator.Generate(scale, root, slot < 7 ? slot : 0, type, voicing, slot < 7 ? octave : octave + 1, notes);
+            SetUserChord(slot, notes);
+        }
+    }
+
+    /// <summary>Replaces the learned controllers with a saved map (a host's project, the standalone's settings); presets never call this.</summary>
+    public void ApplyMidiMap(IEnumerable<MidiMapping>? mappings) => MidiMap.Load(mappings);
 
     /// <summary>Replaces the lane set for a new maximum recording time; existing recordings are dropped.</summary>
     public void ConfigureLanes(float maxSeconds) => Volatile.Write(ref lanes, new LaneSet(maxSeconds));
@@ -268,7 +327,7 @@ public sealed class NoumenonEngine
             sections[s].Reset(seed + (ulong)(s + 1) * SectionSeedStride);
 
         combiner.Reset();
-        sampler.Reset();
+        sampler.Reset(seed + SamplerSeedStride);
         follower.Clear();
         amDepth.Snap();
         gateEnvelope.Reset();
@@ -293,8 +352,10 @@ public sealed class NoumenonEngine
         Scope.Clear();
         previousReverbLeft = 0f;
         previousReverbRight = 0f;
+        previousOutput = 0f;
         matrix.Reset(seed + MatrixSeedStride);
         Lanes.RestartAll();
+        sequencer.Restart();
         samplesUntilTick = 0;
     }
 
@@ -303,13 +364,21 @@ public sealed class NoumenonEngine
     public void Process(float[] left, float[] right, int offset, int count)
     {
         EnsureSilence(count);
-        Render(silence, silence, 0, left, right, offset, count);
+        Render(silence, silence, 0, silence, silence, 0, left, right, offset, count);
     }
 
     /// <summary>Renders with a live input (the FX identity); the input may be the same buffers as the output.</summary>
-    public void Process(float[] inputLeft, float[] inputRight, float[] left, float[] right, int count) => Render(inputLeft, inputRight, 0, left, right, 0, count);
+    public void Process(float[] inputLeft, float[] inputRight, float[] left, float[] right, int count) => Process(inputLeft, inputRight, left, right, 0, count);
 
-    public void Process(float[] inputLeft, float[] inputRight, float[] left, float[] right, int offset, int count) => Render(inputLeft, inputRight, offset, left, right, offset, count);
+    public void Process(float[] inputLeft, float[] inputRight, float[] left, float[] right, int offset, int count)
+    {
+        EnsureSilence(count);
+        Render(inputLeft, inputRight, offset, silence, silence, 0, left, right, offset, count);
+    }
+
+    /// <summary>Renders with a live input and a sidechain (a host's second bus, heard only by the envelope follower); all at the same offset.</summary>
+    public void Process(float[] inputLeft, float[] inputRight, float[] sidechainLeft, float[] sidechainRight, float[] left, float[] right, int offset, int count) =>
+        Render(inputLeft, inputRight, offset, sidechainLeft, sidechainRight, offset, left, right, offset, count);
 
     /// <summary>Everything a snapshot holds, read from the UI thread (a lane still recording contributes what it has so far).</summary>
     public PresetState CapturePreset(string name)
@@ -346,6 +415,8 @@ public sealed class NoumenonEngine
                 state.Locked.Add(ParameterTable.All[i].Id.ToString());
         }
 
+        state.MidiMap = MidiMap.Capture();
+
         return state;
     }
 
@@ -353,6 +424,8 @@ public sealed class NoumenonEngine
     /// Recalls a snapshot from the UI thread: parameters (missing ones take their defaults), lanes,
     /// chords, samples (missing files are reported in <paramref name="warnings"/>), the scale and
     /// the locks. The audio keeps running — values glide, and the lanes restart like MF's Restart.
+    /// The MIDI map is left alone: a host restoring its project applies the snapshot's map itself
+    /// (<see cref="ApplyMidiMap"/>), a preset picked from the bank keeps the player's controllers.
     /// </summary>
     public void ApplyPreset(PresetState state, bool loadSamples = true, ICollection<string>? warnings = null)
     {
@@ -424,7 +497,7 @@ public sealed class NoumenonEngine
 
     private Scale ScaleFor(int index) => index >= 0 && index < Scale.BuiltIn.Count ? Scale.BuiltIn[index] : UserScale;
 
-    private void Render(float[] inputLeft, float[] inputRight, int inputOffset, float[] left, float[] right, int offset, int count)
+    private void Render(float[] inputLeft, float[] inputRight, int inputOffset, float[] sidechainLeft, float[] sidechainRight, int sidechainOffset, float[] left, float[] right, int offset, int count)
     {
         var end = offset + count;
         if (!prepared)
@@ -435,21 +508,24 @@ public sealed class NoumenonEngine
         }
 
         var j = inputOffset;
-        for (var i = offset; i < end; i++, j++)
+        var k = sidechainOffset;
+        for (var i = offset; i < end; i++, j++, k++)
         {
             float l, r;
+            var sidechain = 0.5f * (sidechainLeft[k] + sidechainRight[k]);
             if (oversampling == 2)
             {
+                // The sidechain only feeds the envelope follower, so it is held rather than resampled.
                 upLeft.Process(inputLeft[j], out var inL0, out var inL1);
                 upRight.Process(inputRight[j], out var inR0, out var inR1);
-                RenderSample(inL0, inR0, out var l0, out var r0);
-                RenderSample(inL1, inR1, out var l1, out var r1);
+                RenderSample(inL0, inR0, sidechain, out var l0, out var r0);
+                RenderSample(inL1, inR1, sidechain, out var l1, out var r1);
                 l = downLeft.Process(l0, l1);
                 r = downRight.Process(r0, r1);
             }
             else
             {
-                RenderSample(inputLeft[j], inputRight[j], out l, out r);
+                RenderSample(inputLeft[j], inputRight[j], sidechain, out l, out r);
             }
 
             safety.Process(ref l, ref r);
@@ -458,7 +534,7 @@ public sealed class NoumenonEngine
         }
     }
 
-    private void RenderSample(float inputLeft, float inputRight, out float left, out float right)
+    private void RenderSample(float inputLeft, float inputRight, float sidechain, out float left, out float right)
     {
         if (samplesUntilTick <= 0)
         {
@@ -473,7 +549,16 @@ public sealed class NoumenonEngine
         SectionScope.Write(a, b);
         var mono = combiner.Process(a, b);
         sampler.Process(inputLeft, inputRight, out var sampleLeft, out var sampleRight, out var dry);
-        var envelope = follower.Process(dry);
+        var listen = followerSource switch
+        {
+            FollowerSource.Sample => sampler.SampleMono,
+            FollowerSource.Input => 0.5f * (inputLeft + inputRight),
+            FollowerSource.Sidechain => sidechain,
+            FollowerSource.Sections => mono,
+            FollowerSource.Output => previousOutput,
+            _ => dry,
+        };
+        var envelope = follower.Process(listen * followerGain);
         var depth = amDepth.Next();
         var am = 1f - depth + depth * (envelope > 1f ? 1f : envelope);
         var gateGain = gateEnvelope.Next();
@@ -501,6 +586,7 @@ public sealed class NoumenonEngine
 
         output.Process(ref l, ref r);
         post.Process(ref l, ref r);
+        previousOutput = 0.5f * (l + r);
         var peakL = l < 0f ? -l : l;
         var peakR = r < 0f ? -r : r;
         outputPeakLeft = peakL > outputPeakLeft ? peakL : DspHelper.Undenormalize(outputPeakLeft * peakRelease);
@@ -521,11 +607,12 @@ public sealed class NoumenonEngine
         bool RB(ParamId id) => resolved[(int)id] >= 0.5f;
         int RI(ParamId id) => (int)MathF.Round(resolved[(int)id]);
 
-        // MIDI, the gate, and the triggers the engine cannot run itself.
+        // MIDI (learned controllers write their parameters first), the gate, and the triggers the engine cannot run itself.
         var gate = Interlocked.Exchange(ref gatePending, 0) != 0;
         if (Midi.Drain())
             gate = true;
 
+        MidiMap.Apply(Midi, bank);
         if (bank.Get(ParamId.RandomizeNow) >= 0.5f)
         {
             bank.Set(ParamId.RandomizeNow, 0f);
@@ -551,11 +638,26 @@ public sealed class NoumenonEngine
         // The lanes override their faders; the clock decides whether they all restart.
         var recordingEdge = laneSet.Tick(dt, Clock.Speed, Clock.BarSeconds, bank, resolved);
         if (Clock.Tick(bank, gate, recordingEdge))
+        {
             laneSet.RestartAll();
+            sequencer.Restart();
+        }
 
-        // The pitch layer.
+        // The chord sequencer runs on the same clock; its root can stand in for a P fader.
         var scale = ScaleFor(RI(ParamId.Scale));
         var root = RI(ParamId.ScaleRoot);
+        var sequencing = RB(ParamId.ChordSeqOn);
+        if (sequencing)
+        {
+            var degree = sequencer.Tick(dt, Clock.Speed, Clock.BarSeconds, resolved);
+            var octave = RI(ParamId.ChordSeqOctave);
+            ChordGenerator.Generate(scale, root, degree, (ChordType)RI(ParamId.ChordSeqType), (ChordVoicing)RI(ParamId.ChordSeqVoicing), octave, sequencerNotes);
+            var rootTarget = RI(ParamId.ChordSeqRoot);
+            if (rootTarget > 0)
+                resolved[(int)ParameterTable.Pitch(rootTarget - 1, PitchParam.Value)] = Math.Clamp(ChordGenerator.RootNote(scale, root, degree, octave) - Tuning.MiddleC, -48f, 48f);
+        }
+
+        // The pitch layer.
         pitch1.Tick(dt, R(ParamId.P1Value), RB(ParamId.P1Midi), Midi, R(ParamId.P1BendRange), R(ParamId.P1Glide), scale, root);
         pitch2.Tick(dt, R(ParamId.P2Value), RB(ParamId.P2Midi), Midi, R(ParamId.P2BendRange), R(ParamId.P2Glide), scale, root);
         var p1 = pitch1.Value;
@@ -573,6 +675,7 @@ public sealed class NoumenonEngine
 
         var a4 = R(ParamId.TuningA4);
         var masterCutoff = R(ParamId.MasterFilterCutoff);
+        var wavetable = Samples.Get(RI(ParamId.WavetableKey))?.Data.Wavetable;
 
         for (var s = 0; s < ParameterTable.SectionCount; s++)
         {
@@ -595,6 +698,7 @@ public sealed class NoumenonEngine
                 }
 
                 osc.Waveform = (Waveform)RI(ParameterTable.Osc(id, slot, OscParam.Wave));
+                osc.Table = wavetable;
                 var route1 = routeAll1 || RB(ParameterTable.Osc(id, slot, OscParam.P1Route));
                 var route2 = routeAll2 || RB(ParameterTable.Osc(id, slot, OscParam.P2Route));
                 var semitone = R(ParameterTable.Osc(id, slot, OscParam.Semitone));
@@ -630,10 +734,18 @@ public sealed class NoumenonEngine
         sampler.SetGain(R(ParamId.SamplerAmp) * R(ParamId.SamplerMaster) * (sample?.Gain ?? 1f));
         sampler.SetInputMix(R(ParamId.SamplerInputMix));
         sampler.SetStereo(RB(ParamId.SamplerStereo));
+        sampler.Granular.Set(R(ParamId.GrainSize), R(ParamId.GrainDensity), R(ParamId.GrainPosition), R(ParamId.GrainSpray), R(ParamId.GrainPitchSpread), R(ParamId.GrainWindow), R(ParamId.GrainWidth), (GrainScan)RI(ParamId.GrainScan));
+        sampler.Stretch.SetAmount(R(ParamId.StretchAmount));
+        sampler.Stretch.SetWindow((StretchWindow)RI(ParamId.StretchWindow));
+        sampler.SetMode((SampleMode)RI(ParamId.SamplerMode));
         if (gate && RB(ParamId.SamplerRetrigger))
             sampler.Retrigger();
 
+        sampler.Tick();
+
         follower.SetTimes(R(ParamId.EnvFollowerAttack), R(ParamId.EnvFollowerRelease));
+        followerSource = (FollowerSource)RI(ParamId.EnvFollowerSource);
+        followerGain = DspHelper.DbToLinear(R(ParamId.EnvFollowerGain));
         amDepth.Target = R(ParamId.SamplerAmDepth);
 
         // The effect chain.
@@ -656,8 +768,8 @@ public sealed class NoumenonEngine
         spin.SetTimes(R(ParamId.SpinTime1), R(ParamId.SpinTime2), R(ParamId.SpinFine), RB(ParamId.SpinLink));
         spin.SetFeedback(R(ParamId.SpinFeedback));
 
-        // Resochord: the six notes come from ResoMidi's round-robin, the P-driven chord select, the
-        // chord list (presets or user memories) or the voice parameters, then the scale.
+        // Resochord: the six notes come from ResoMidi's round-robin, the chord sequencer, the P-driven
+        // chord select, the chord list (presets or user memories) or the voice parameters, then the scale.
         resochord.SetEnabled(RB(ParamId.ResochordOn));
         resochord.SetMix(R(ParamId.ResochordMix));
         resochord.SetGlobalFeedback(R(ParamId.ResochordFeedback), R(ParamId.ResochordFeedbackFader));
@@ -675,6 +787,8 @@ public sealed class NoumenonEngine
             var midiNote = resoMidi ? Midi.VoiceNote(v) : float.NaN;
             if (!float.IsNaN(midiNote))
                 note = midiNote;
+            else if (sequencing)
+                note = sequencerNotes[v];
             else if (chordIndex <= 0)
                 note = R(ParameterTable.ResoVoice(v, ResoVoiceParam.Note));
             else if (chordIndex < ChordTable.Count)

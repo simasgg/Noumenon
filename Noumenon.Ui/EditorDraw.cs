@@ -181,7 +181,7 @@ public static class EditorDraw
         }
     }
 
-    /// <summary>The oscillator icons, in the order of the Waveforms choice list (sine … S&amp;H noise).</summary>
+    /// <summary>The oscillator icons, in the order of the Waveforms choice list (sine … S&amp;H noise, wavetable, sub).</summary>
     public static void WaveGlyph(Graphics g, RectangleF r, int waveform, Color color)
     {
         using var pen = new Pen(color, 1.3f) { LineJoin = LineJoin.Round };
@@ -228,6 +228,44 @@ public static class EditorDraw
                 }
 
                 g.DrawLines(pen, noise);
+                break;
+            case 8:
+                // Wavetable: three cycles of changing shape, stacked back to front like a table's frames.
+                using (var back = new Pen(Color.FromArgb(110, color), 1f))
+                {
+                    for (var layer = 2; layer >= 1; layer--)
+                    {
+                        var offset = layer * 2.2f;
+                        var frame = new PointF[16];
+                        for (var i = 0; i < frame.Length; i++)
+                        {
+                            var t = i / (float)(frame.Length - 1);
+                            frame[i] = new PointF(x0 + offset + (w - 2f * offset) * t, mid - offset - amp * 0.7f * MathF.Sin(t * MathF.PI * 2f) * (1f - 0.25f * layer));
+                        }
+
+                        g.DrawLines(back, frame);
+                    }
+                }
+
+                var front = new PointF[20];
+                for (var i = 0; i < front.Length; i++)
+                {
+                    var t = i / (float)(front.Length - 1);
+                    front[i] = new PointF(x0 + w * 0.85f * t, mid + 1.5f - amp * 0.8f * (MathF.Sin(t * MathF.PI * 2f) + 0.35f * MathF.Sin(t * MathF.PI * 6f)) / 1.35f);
+                }
+
+                g.DrawLines(pen, front);
+                break;
+            case 9:
+                // Sub: the slot's sine riding on the octave below.
+                var sub = new PointF[28];
+                for (var i = 0; i < sub.Length; i++)
+                {
+                    var t = i / (float)(sub.Length - 1);
+                    sub[i] = new PointF(x0 + w * t, mid - amp * (0.65f * MathF.Sin(t * MathF.PI * 2f) + 0.35f * MathF.Sin(t * MathF.PI * 8f)));
+                }
+
+                g.DrawLines(pen, sub);
                 break;
             default:
                 var steps = new List<PointF>();

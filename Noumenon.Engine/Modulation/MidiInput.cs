@@ -38,6 +38,8 @@ public sealed class MidiInput
     private readonly float[] voiceNotes = new float[ResoVoiceCount];
     private ulong heldLow;
     private ulong heldHigh;
+    private ulong arrivedLow;
+    private ulong arrivedHigh;
     private int lastNote = -1;
     private float lastVelocity;
     private float bend;
@@ -48,9 +50,6 @@ public sealed class MidiInput
     {
         Array.Fill(voiceNotes, float.NaN);
     }
-
-    /// <summary>The controller number the matrix's "CC" source follows (74, brightness, by default).</summary>
-    public int MatrixController { get; set; } = 74;
 
     public int LastNote => Volatile.Read(ref lastNote);
 
@@ -69,6 +68,12 @@ public sealed class MidiInput
 
     /// <summary>The note ResoMidi last assigned to a Resochord voice, or NaN if that voice has not been played.</summary>
     public float VoiceNote(int voice) => Volatile.Read(ref voiceNotes[voice]);
+
+    /// <summary>Audio thread: the controllers 0–63 that sent a value in the last drain, one bit each (the MIDI map reads them).</summary>
+    internal ulong ArrivedLow => arrivedLow;
+
+    /// <summary>Controllers 64–127, as <see cref="ArrivedLow"/>.</summary>
+    internal ulong ArrivedHigh => arrivedHigh;
 
     public void NoteOn(int note, int velocity)
     {
@@ -113,6 +118,8 @@ public sealed class MidiInput
     internal bool Drain()
     {
         var gate = false;
+        arrivedLow = 0UL;
+        arrivedHigh = 0UL;
         while (TryDequeue(out var message))
         {
             switch (message.Kind)
@@ -133,6 +140,11 @@ public sealed class MidiInput
                     break;
                 case MidiKind.ControlChange:
                     Volatile.Write(ref controllers[message.Data1], message.Data2 / 127f);
+                    if (message.Data1 < 64)
+                        arrivedLow |= 1UL << message.Data1;
+                    else
+                        arrivedHigh |= 1UL << (message.Data1 - 64);
+
                     break;
                 case MidiKind.Aftertouch:
                     Volatile.Write(ref aftertouch, message.Data1 / 127f);

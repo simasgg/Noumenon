@@ -101,6 +101,7 @@ internal sealed class MainForm : Form, IEditorHost
         if (Math.Abs(settings.LaneMaxSeconds - LaneSet.DefaultMaxSeconds) > 0.01f)
             engine.ConfigureLanes(settings.LaneMaxSeconds);
 
+        engine.ApplyMidiMap(settings.MidiMap);
         engine.Clock.HostTempo = settings.Tempo;
         host = new AudioHost(engine, settings);
         midi = new MidiHost(engine.Midi);
@@ -142,6 +143,25 @@ internal sealed class MainForm : Form, IEditorHost
     }
 
     public void SavePreset() => SavePreset(forceDialog: false);
+
+    public void MorphToPreset(int index, float seconds)
+    {
+        if (index < 0 || index >= library.All.Count)
+            return;
+
+        var target = library.All[index];
+        try
+        {
+            engine.Morph(PresetIo.Load(target.Path), seconds);
+            Notice($"Morphing to {target.Name} over {seconds.ToString("0.#", CultureInfo.InvariantCulture)} s (lanes and samples stay).");
+        }
+        catch (Exception ex) when (ex is IOException or FormatException or JsonException or UnauthorizedAccessException)
+        {
+            Notice($"Preset not loaded: {ex.Message}");
+        }
+    }
+
+    void IEditorHost.Notice(string text) => Notice(text);
 
     public void LoadSample(int key)
     {
@@ -231,6 +251,7 @@ internal sealed class MainForm : Form, IEditorHost
         host.Dispose();
         midi.Dispose();
         settings.EditorScale = editor.PanelScale;
+        settings.MidiMap = engine.MidiMap.Capture();
         settings.Save();
         developerWindow?.Dispose();
         base.OnFormClosing(e);
@@ -450,8 +471,10 @@ internal sealed class MainForm : Form, IEditorHost
         view.DropDownItems.Add(scaleMenu);
         view.DropDownItems.Add(new ToolStripSeparator());
         view.DropDownItems.Add(Item("&MAIN Page", Keys.Control | Keys.D1, () => editor.Page = 0));
-        view.DropDownItems.Add(Item("&POST Page", Keys.Control | Keys.D2, () => editor.Page = 1));
+        view.DropDownItems.Add(Item("&SAMPLE Page", Keys.Control | Keys.D2, () => editor.Page = 1));
         view.DropDownItems.Add(Item("M&OD Page", Keys.Control | Keys.D3, () => editor.Page = 2));
+        view.DropDownItems.Add(Item("&CHORDS Page", Keys.Control | Keys.D4, () => editor.Page = 3));
+        view.DropDownItems.Add(Item("&POST Page", Keys.Control | Keys.D5, () => editor.Page = 4));
         view.DropDownItems.Add(new ToolStripSeparator());
         view.DropDownItems.Add(Item("&Developer Panel…", Keys.Control | Keys.D, ShowDeveloperPanel));
 
@@ -925,15 +948,7 @@ internal sealed class MainForm : Form, IEditorHost
         if (picker.ShowDialog(this) != DialogResult.OK || picker.Selected is not { } target)
             return;
 
-        try
-        {
-            engine.Morph(PresetIo.Load(target.Path), picker.Seconds);
-            Notice($"Morphing to {target.Name} over {picker.Seconds.ToString("0.#", CultureInfo.InvariantCulture)} s (lanes and samples stay).");
-        }
-        catch (Exception ex) when (ex is IOException or FormatException or JsonException or UnauthorizedAccessException)
-        {
-            Notice($"Preset not loaded: {ex.Message}");
-        }
+        MorphToPreset(library.IndexOf(target.Path), picker.Seconds);
     }
 
     private void LoadScale()
@@ -966,9 +981,10 @@ internal sealed class MainForm : Form, IEditorHost
         MessageBox.Show(this,
             "Panel: Space restart lanes · R randomize · M mute (R and M play notes while the computer keyboard is a MIDI keyboard) · Ctrl+Z / Ctrl+Y undo / redo · Ctrl+Tab next page\n\n" +
             "F5 Randomize · F6 Restart lanes · F7 Mute · F8 Play / stop the internal transport · F9 Record · F10 Party mode · F12 All notes off\n\n" +
-            "Ctrl+N Init · Ctrl+O / Ctrl+S Open / save preset · Ctrl+Left / Right previous / next preset · Ctrl+R random factory preset · Ctrl+M morph · Ctrl+B bounce · Ctrl+L load sample · Ctrl+T tempo · Ctrl+, audio settings · Ctrl+D developer panel · Ctrl+1/2/3 pages\n\n" +
+            "Ctrl+N Init · Ctrl+O / Ctrl+S Open / save preset · Ctrl+Left / Right previous / next preset · Ctrl+R random factory preset · Ctrl+M morph · Ctrl+B bounce · Ctrl+L load sample · Ctrl+T tempo · Ctrl+, audio settings · Ctrl+D developer panel · Ctrl+1…5 pages\n\n" +
             "Computer keyboard (when on): Z–M one octave with S D G H J as sharps, Q–P the next octave, minus / equals shift octaves.\n\n" +
-            "Lanes: click the small display under a fader to arm it, drag the fader to record, release; the button above the display plays the loop. Right-click a fader or knob for its lane menu.",
+            "Lanes: click the small display under a fader to arm it, drag the fader to record, release; the button above the display plays the loop.\n\n" +
+            "Right-click any fader, knob or number: its lane, Learn MIDI CC (then move a controller), Modulate with a source (a free matrix slot at a quarter depth).",
             "Keys");
     }
 

@@ -9,7 +9,9 @@ namespace Noumenon.Vst3.Processing;
 /// <summary>
 /// The VST3 component of one plugin instance: it owns the session (the engine) and is what the
 /// host processes and asks for state. The two identities differ only in their buses — the effect
-/// has a stereo input feeding Samp↔In — so they are two sealed subclasses of this one. Each block,
+/// has a stereo main input feeding Samp↔In — so they are two sealed subclasses of this one. Both
+/// have a stereo auxiliary "Sidechain" input, off until the host routes something to it, which only
+/// the envelope follower hears (its Sidechain source). Each block,
 /// every parameter point and note goes to the <see cref="BlockRenderer"/> with its sample offset,
 /// the host's tempo and transport go to the lane clock, and the renderer cuts the block at those
 /// offsets; a block without audio (the host flushing parameters) applies them at once. The output
@@ -25,6 +27,8 @@ namespace Noumenon.Vst3.Processing;
 internal abstract class NoumenonProcessor : AudioProcessor<NoumenonModel>, IAudioProcessor
 {
     private const uint InfiniteTail = uint.MaxValue;
+
+    private volatile bool sidechainActive;
 
     protected NoumenonProcessor(bool isEffect)
         : base(AudioSampleSizeSupport.Float32, 0, InfiniteTail, AudioProcessContextRequirementFlags.NeedTempo | AudioProcessContextRequirementFlags.NeedTransportState)
@@ -43,11 +47,15 @@ internal abstract class NoumenonProcessor : AudioProcessor<NoumenonModel>, IAudi
 
     uint IAudioProcessor.LatencySamples => (uint)Session.Engine.LatencySamples;
 
+    /// <summary>The sidechain's place among the input buses: after the effect's main input, first for the instrument.</summary>
+    public int SidechainBusIndex => Session.IsEffect ? 1 : 0;
+
     protected override bool Initialize(AudioHostApplication host)
     {
         if (Session.IsEffect)
             AddAudioInput("Input", SpeakerArrangement.SpeakerStereo);
 
+        AddAudioInput("Sidechain", SpeakerArrangement.SpeakerStereo, BusType.Auxiliary, default);
         AddAudioOutput("Output", SpeakerArrangement.SpeakerStereo);
         AddEventInput("MIDI Input", 16);
         NPlugWorkarounds.SeedStrings(host, SessionMessages.Ids);
@@ -64,6 +72,14 @@ internal abstract class NoumenonProcessor : AudioProcessor<NoumenonModel>, IAudi
     {
         if (!isActive)
             Session.Engine.Midi.AllNotesOff();
+    }
+
+    protected override bool OnBusActivate(BusInfo busInfo, bool newActiveState)
+    {
+        if (busInfo.MediaType == BusMediaType.Audio && busInfo.Direction == BusDirection.Input && busInfo.BusType == BusType.Auxiliary)
+            sidechainActive = newActiveState;
+
+        return newActiveState;
     }
 
     protected override void SaveState(PortableBinaryWriter writer) => writer.Stream.Write(Session.SaveState());
@@ -139,7 +155,18 @@ internal abstract class NoumenonProcessor : AudioProcessor<NoumenonModel>, IAudi
             inRight = input.ChannelCount > 1 ? input.GetChannelSpanAsFloat32(setup, data, 1) : inLeft;
         }
 
-        renderer.Render(inLeft, inRight, left, right, frames);
+        // An inactive bus may come without buffers, so the sidechain is read only while the host has it on.
+        scoped ReadOnlySpan<float> sideLeft = default;
+        scoped ReadOnlySpan<float> sideRight = default;
+        var side = SidechainBusIndex;
+        if (sidechainActive && data.Input.BusCount > side && data.Input[side].ChannelCount > 0)
+        {
+            ref var sidechain = ref data.Input[side];
+            sideLeft = sidechain.GetChannelSpanAsFloat32(setup, data, 0);
+            sideRight = sidechain.ChannelCount > 1 ? sidechain.GetChannelSpanAsFloat32(setup, data, 1) : sideLeft;
+        }
+
+        renderer.Render(inLeft, inRight, sideLeft, sideRight, left, right, frames);
         output.SilenceFlags = 0;
         output.SetChannelSilence(0, BlockRenderer.IsSilent(left));
         if (output.ChannelCount > 1)

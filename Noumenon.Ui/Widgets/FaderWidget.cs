@@ -11,7 +11,9 @@ namespace Noumenon.Ui.Widgets;
 /// records, the display fills red while it does, and shows the loop position in green while it
 /// plays. Dragging sets the lane's Pressed flag so the engine records exactly while the cap is
 /// held; while a lane plays and the cap is not held, the cap follows the resolved value. The
-/// wheel steps, a double-click restores the default, a right-click opens the lane menu.
+/// wheel steps, a double-click restores the default, a right-click opens the control menu (lane,
+/// MIDI learn, modulation). Like a knob it marks a matrix route (an accent dot) and a bound MIDI
+/// controller (a light one) at the start of its slot, and rings the slot amber while it learns.
 /// </summary>
 public sealed class FaderWidget : Widget
 {
@@ -34,6 +36,7 @@ public sealed class FaderWidget : Widget
     private float grabOffset;
     private float shownValue = float.NaN;
     private int shownLane = -1;
+    private int shownLinks = -1;
 
     /// <param name="x">Left of the slot (vertical) or of the slot's start (horizontal).</param>
     /// <param name="y">Top of the slot; a caption above a vertical fader extends the widget upwards.</param>
@@ -56,7 +59,7 @@ public sealed class FaderWidget : Widget
         }
     }
 
-    public override string? Tooltip => $"{binding.Info.Name}: {binding.ValueText}{(binding.Lane is null ? "" : "\n" + binding.LaneText + "\nbutton: automated · display: arm · right-click: lane menu")}\ndouble-click: default";
+    public override string? Tooltip => $"{binding.Info.Name}: {binding.ValueText}{(binding.Lane is null ? "" : "\n" + binding.LaneText + "\nbutton: automated · display: arm")}\nright-click: {(binding.Lane is null ? "" : "lane, ")}MIDI learn, modulate · double-click: default";
 
     private RectangleF Slot => vertical
         ? new RectangleF(Bounds.X + (Column - SlotThickness) / 2f, Bounds.Y + (label is null ? 0f : LabelHeight), SlotThickness, length)
@@ -90,6 +93,7 @@ public sealed class FaderWidget : Widget
             EditorDraw.Text(g, label, new RectangleF(Bounds.X - 10f, Bounds.Y, Bounds.Width + 20f, LabelHeight), EditorTheme.LabelFont, EditorTheme.Text, EditorTheme.Center);
 
         EditorDraw.FaderBar(g, Slot, binding.Normalized, binding.ResolvedNormalized, binding.IsBipolar, vertical, Hot || dragging);
+        DrawLinks(g, binding.Links);
 
         var lane = binding.Lane;
         if (lane is null)
@@ -134,13 +138,32 @@ public sealed class FaderWidget : Widget
             laneState = (lane.Mode == LaneMode.Automated ? 1 : 0) | (lane.Armed ? 2 : 0) | (lane.IsRecording ? 4 : 0) | (lane.IsPlaying ? 8 : 0) | (lane.HasRecording ? 16 : 0) | (phase << 5);
         }
 
-        if (value == shownValue && laneState == shownLane)
+        var links = binding.Links;
+        if (value == shownValue && laneState == shownLane && links == shownLinks)
             return false;
 
         shownValue = value;
         shownLane = laneState;
+        shownLinks = links;
 
         return true;
+    }
+
+    private void DrawLinks(Graphics g, int links)
+    {
+        if (links == 0)
+            return;
+
+        var slot = Slot;
+        if ((links & ParamBinding.LinkLearning) != 0)
+            EditorDraw.Frame(g, RectangleF.Inflate(slot, 1.5f, 1.5f), 3f, Color.Transparent, EditorTheme.Armed, 1.5f);
+
+        var start = vertical ? new PointF(slot.X + slot.Width / 2f, slot.Bottom) : new PointF(slot.X, slot.Y + slot.Height / 2f);
+        if ((links & ParamBinding.LinkModulated) != 0)
+            EditorDraw.Led(g, vertical ? new RectangleF(start.X - 6f, start.Y - 4f, 3f, 3f) : new RectangleF(start.X - 1f, slot.Y - 4.5f, 3f, 3f), true, EditorTheme.Accent);
+
+        if ((links & ParamBinding.LinkMidi) != 0)
+            EditorDraw.Led(g, vertical ? new RectangleF(start.X + 3f, start.Y - 4f, 3f, 3f) : new RectangleF(start.X + 3f, slot.Y - 4.5f, 3f, 3f), true, EditorTheme.TextLight);
     }
 
     public override void MouseDown(PointF p, MouseButtons button, int clicks)
@@ -148,9 +171,7 @@ public sealed class FaderWidget : Widget
         var lane = binding.Lane;
         if (button == MouseButtons.Right)
         {
-            if (lane is not null)
-                ShowMenu(LaneMenu.Build(binding), p);
-
+            ShowMenu(ControlMenu.Build(binding, Commit), p);
             return;
         }
 

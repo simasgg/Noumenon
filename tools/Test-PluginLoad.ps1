@@ -384,13 +384,13 @@ public static class VstHost
         ProcessReplacingDelegate process = (ProcessReplacingDelegate)Marshal.GetDelegateForFunctionPointer(Marshal.ReadIntPtr(e, 120), typeof(ProcessReplacingDelegate));
         IntPtr inL = Marshal.AllocHGlobal(frames * 4), inR = Marshal.AllocHGlobal(frames * 4);
         IntPtr outL = Marshal.AllocHGlobal(frames * 4), outR = Marshal.AllocHGlobal(frames * 4);
-        IntPtr inputs = Marshal.AllocHGlobal(16), outputs = Marshal.AllocHGlobal(16);
+        IntPtr inputs = Marshal.AllocHGlobal(32), outputs = Marshal.AllocHGlobal(16);
         float[] samples = new float[frames];
         float peak = 0f;
         try
         {
             for (int i = 0; i < frames; i++) { Marshal.WriteInt32(inL, i * 4, 0); Marshal.WriteInt32(inR, i * 4, 0); }
-            Marshal.WriteIntPtr(inputs, 0, inL); Marshal.WriteIntPtr(inputs, 8, inR);
+            Marshal.WriteIntPtr(inputs, 0, inL); Marshal.WriteIntPtr(inputs, 8, inR); Marshal.WriteIntPtr(inputs, 16, inL); Marshal.WriteIntPtr(inputs, 24, inR);   // up to four inputs: the effect's main pair and its sidechain
             Marshal.WriteIntPtr(outputs, 0, outL); Marshal.WriteIntPtr(outputs, 8, outR);
             for (int b = 0; b < blocks; b++)
             {
@@ -566,7 +566,7 @@ foreach ($path in $Dll)
     Check (($flags -band 16) -ne 0) 'processReplacing'
     Check (($flags -band 32) -ne 0) 'program chunks'
     Check ($outputs -eq 2) 'two outputs'
-    Check (($inputs -eq 0 -and $isSynth -and $id -eq 'Noum') -or ($inputs -eq 2 -and -not $isSynth -and $id -eq 'NouF')) "identity is consistent (synth without inputs 'Noum', or effect with two inputs 'NouF')"
+    Check (($inputs -eq 0 -and $isSynth -and $id -eq 'Noum') -or ($inputs -eq 4 -and -not $isSynth -and $id -eq 'NouF')) "identity is consistent (synth without inputs 'Noum', or effect with a stereo input and a stereo sidechain 'NouF')"
     Check ($params -gt 300) 'the whole parameter table is published'
 
     [void][VstHost]::Dispatch($effect, 0, 0, [IntPtr]::Zero, [IntPtr]::Zero, 0)          # effOpen

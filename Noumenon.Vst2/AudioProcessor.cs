@@ -10,7 +10,8 @@ namespace Noumenon.Vst2;
 /// <summary>
 /// The audio thread. Each block pulls the host's parameter changes into the bank, refreshes the
 /// lane clock from the host's time info every few blocks, copies the host's buffers into float
-/// arrays (the instrument identity has no inputs and feeds the engine silence) and renders in
+/// arrays (the instrument identity has no inputs and feeds the engine silence; the effect's inputs
+/// 1–2 feed Samp↔In and 3–4 the envelope follower's sidechain) and renders in
 /// sub-blocks cut at the MIDI events the host delivered for this block, so a note lands within
 /// the engine's control interval of where the host put it. Steady state is allocation-free: the
 /// scratch arrays are sized by the announced block size and grow only if a host sends a bigger
@@ -33,6 +34,8 @@ internal sealed class AudioProcessor : VstPluginAudioProcessor, IVstPluginBypass
     private readonly PendingEvent[] pending = new PendingEvent[MaxPendingEvents];
     private float[] inputLeft = new float[InitialFrames];
     private float[] inputRight = new float[InitialFrames];
+    private float[] sidechainLeft = new float[InitialFrames];
+    private float[] sidechainRight = new float[InitialFrames];
     private float[] outputLeft = new float[InitialFrames];
     private float[] outputRight = new float[InitialFrames];
     private IVstHostSequencer? sequencer;
@@ -157,7 +160,7 @@ internal sealed class AudioProcessor : VstPluginAudioProcessor, IVstPluginBypass
 
             if (at > rendered)
             {
-                engine.Process(inputLeft, inputRight, outputLeft, outputRight, rendered, at - rendered);
+                engine.Process(inputLeft, inputRight, sidechainLeft, sidechainRight, outputLeft, outputRight, rendered, at - rendered);
                 rendered = at;
             }
 
@@ -166,7 +169,7 @@ internal sealed class AudioProcessor : VstPluginAudioProcessor, IVstPluginBypass
 
         pendingCount = 0;
         if (rendered < count)
-            engine.Process(inputLeft, inputRight, outputLeft, outputRight, rendered, count - rendered);
+            engine.Process(inputLeft, inputRight, sidechainLeft, sidechainRight, outputLeft, outputRight, rendered, count - rendered);
 
         outputLeft.AsSpan(0, count).CopyTo(outL.AsSpan());
         if (!ReferenceEquals(outR, outL))
@@ -175,16 +178,22 @@ internal sealed class AudioProcessor : VstPluginAudioProcessor, IVstPluginBypass
 
     private void CopyInput(VstAudioBuffer[] inChannels, int count)
     {
-        if (inChannels.Length == 0 || inChannels[0].SampleCount < count)
+        CopyPair(inChannels, 0, inputLeft, inputRight, count);
+        CopyPair(inChannels, PluginIdentity.SidechainInput, sidechainLeft, sidechainRight, count);
+    }
+
+    private static void CopyPair(VstAudioBuffer[] inChannels, int first, float[] left, float[] right, int count)
+    {
+        if (inChannels.Length <= first || inChannels[first].SampleCount < count)
         {
-            Array.Clear(inputLeft, 0, count);
-            Array.Clear(inputRight, 0, count);
+            Array.Clear(left, 0, count);
+            Array.Clear(right, 0, count);
             return;
         }
 
-        inChannels[0].AsReadOnlySpan()[..count].CopyTo(inputLeft);
-        var right = inChannels.Length > 1 && inChannels[1].SampleCount >= count ? inChannels[1] : inChannels[0];
-        right.AsReadOnlySpan()[..count].CopyTo(inputRight);
+        inChannels[first].AsReadOnlySpan()[..count].CopyTo(left);
+        var second = inChannels.Length > first + 1 && inChannels[first + 1].SampleCount >= count ? inChannels[first + 1] : inChannels[first];
+        second.AsReadOnlySpan()[..count].CopyTo(right);
     }
 
     private static void PassThrough(VstAudioBuffer[] inChannels, VstAudioBuffer outL, VstAudioBuffer outR, int count)
@@ -293,6 +302,8 @@ internal sealed class AudioProcessor : VstPluginAudioProcessor, IVstPluginBypass
 
         inputLeft = new float[frames];
         inputRight = new float[frames];
+        sidechainLeft = new float[frames];
+        sidechainRight = new float[frames];
         outputLeft = new float[frames];
         outputRight = new float[frames];
     }

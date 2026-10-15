@@ -4,23 +4,27 @@ namespace Noumenon.Engine.Scales;
 /// A scale as a sorted list of degrees in cents above the root within one period (normally the
 /// 1200-cent octave), used to quantize oscillator semitones, the P faders' MIDI notes and the
 /// Resochord's notes. 12-TET is the identity and skips quantization; just and Scala scales carry
-/// fractional degrees. Immutable, so the audio thread can hold a reference safely.
+/// fractional degrees. Immutable, so the audio thread can hold a reference safely, and
+/// <see cref="Quantize"/> walks a plain array so it allocates nothing there.
 /// </summary>
 public sealed class Scale
 {
+    private readonly float[] degrees;
+
     public Scale(string name, IEnumerable<float> degreesCents, float periodCents = 1200f)
     {
         if (periodCents <= 0f)
             throw new ArgumentOutOfRangeException(nameof(periodCents));
 
-        var degrees = degreesCents.Where(c => c >= 0f && c < periodCents).Distinct().OrderBy(c => c).ToArray();
-        if (degrees.Length == 0 || degrees[0] != 0f)
-            degrees = [0f, ..degrees.Where(c => c != 0f)];
+        var sorted = degreesCents.Where(c => c >= 0f && c < periodCents).Distinct().OrderBy(c => c).ToArray();
+        if (sorted.Length == 0 || sorted[0] != 0f)
+            sorted = [0f, ..sorted.Where(c => c != 0f)];
 
+        degrees = sorted;
         Name = name;
-        DegreesCents = degrees;
+        DegreesCents = sorted;
         PeriodCents = periodCents;
-        IsIdentity = periodCents == 1200f && degrees.Length == 12 && degrees.Select((c, i) => MathF.Abs(c - 100f * i) < 0.01f).All(x => x);
+        IsIdentity = periodCents == 1200f && sorted.Length == 12 && sorted.Select((c, i) => MathF.Abs(c - 100f * i) < 0.01f).All(x => x);
     }
 
     public string Name { get; }
@@ -47,13 +51,13 @@ public sealed class Scale
 
         var best = 0f;
         var bestDistance = float.MaxValue;
-        foreach (var degree in DegreesCents)
+        for (var i = 0; i < degrees.Length; i++)
         {
-            var distance = MathF.Abs(degree - withinCents);
+            var distance = MathF.Abs(degrees[i] - withinCents);
             if (distance < bestDistance)
             {
                 bestDistance = distance;
-                best = degree;
+                best = degrees[i];
             }
         }
 

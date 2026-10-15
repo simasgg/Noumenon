@@ -5,8 +5,8 @@ namespace Noumenon.Engine.Samples;
 
 /// <summary>
 /// The sample map: 128 numbered keys (MF's map keys, Fabrications used 74–103) each holding at most
-/// one <see cref="SampleSlot"/>. Loading and decoding happen on whatever thread calls
-/// <see cref="Load"/> — never the audio thread, which only ever does a volatile read of a slot
+/// one <see cref="SampleSlot"/>. Loading, decoding and building the sample's wavetable happen on
+/// whatever thread calls <see cref="Load"/> — never the audio thread, which only ever does a volatile read of a slot
 /// reference at its control tick and crossfades to whatever it finds there. The standalone runs
 /// loads on a worker; the harness and tests call them inline. Unlike MF, adding a sample never
 /// rebuilds anything: a key is simply set or cleared.
@@ -27,9 +27,11 @@ public sealed class SampleMap
         return Set(key, data, gain, rootNote, path);
     }
 
+    /// <summary>Publishes decoded audio on a key, building its wavetable first (on the caller's thread, like the decoding).</summary>
     public SampleSlot Set(int key, SampleData data, float gain = 1f, int rootNote = Tuning.MiddleC, string? path = null)
     {
         ValidateKey(key);
+        data.BuildWavetable();
         var slot = new SampleSlot(key, data.Name, path, data, gain < 0f ? 0f : gain, Math.Clamp(rootNote, 0, 127));
         Volatile.Write(ref slots[key], slot);
 

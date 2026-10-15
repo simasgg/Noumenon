@@ -11,10 +11,11 @@ namespace Noumenon.Vst3.Processing;
 /// land within the engine's control interval of where the host placed them. A table parameter
 /// reaches the bank unless <see cref="Parameters.HostValues"/> says it is the echo of the panel's
 /// own edit; the hidden MIDI-controller parameters become controller, aftertouch and pitch-bend
-/// messages (CC 120 and 123 also release every note). Everything is preallocated in
-/// <see cref="Prepare"/> and steady state allocates nothing; a block larger than announced grows
-/// the buffers once. An Engine Rate change re-prepares the engine here, between blocks, because
-/// nothing else may touch the engine while this thread renders.
+/// messages (CC 120 and 123 also release every note). The effect's main input feeds Samp↔In; the
+/// sidechain bus either identity may have feeds only the envelope follower. Everything is
+/// preallocated in <see cref="Prepare"/> and steady state allocates nothing; a block larger than
+/// announced grows the buffers once. An Engine Rate change re-prepares the engine here, between
+/// blocks, because nothing else may touch the engine while this thread renders.
 /// </summary>
 internal sealed class BlockRenderer
 {
@@ -28,6 +29,8 @@ internal sealed class BlockRenderer
     private readonly HostEvent[] events = new HostEvent[MaxEvents];
     private float[] inputLeft = new float[MinimumFrames];
     private float[] inputRight = new float[MinimumFrames];
+    private float[] sidechainLeft = new float[MinimumFrames];
+    private float[] sidechainRight = new float[MinimumFrames];
     private float[] outputLeft = new float[MinimumFrames];
     private float[] outputRight = new float[MinimumFrames];
     private int eventCount;
@@ -100,11 +103,15 @@ internal sealed class BlockRenderer
         eventCount = 0;
     }
 
+    public void Render(ReadOnlySpan<float> inLeft, ReadOnlySpan<float> inRight, Span<float> outLeft, Span<float> outRight, int count) =>
+        Render(inLeft, inRight, ReadOnlySpan<float>.Empty, ReadOnlySpan<float>.Empty, outLeft, outRight, count);
+
     /// <summary>
     /// Renders <paramref name="count"/> frames. An empty input renders silence in (the instrument,
-    /// or an effect whose input bus is off); an empty right output renders a mono bus's left only.
+    /// or an effect whose input bus is off), an empty sidechain likewise; an empty right output
+    /// renders a mono bus's left only.
     /// </summary>
-    public void Render(ReadOnlySpan<float> inLeft, ReadOnlySpan<float> inRight, Span<float> outLeft, Span<float> outRight, int count)
+    public void Render(ReadOnlySpan<float> inLeft, ReadOnlySpan<float> inRight, ReadOnlySpan<float> sideLeft, ReadOnlySpan<float> sideRight, Span<float> outLeft, Span<float> outRight, int count)
     {
         clockMs = Environment.TickCount64;
         EnsureCapacity(count);
@@ -113,6 +120,7 @@ internal sealed class BlockRenderer
             engine.Prepare(preparedRate, preparedFrames);
 
         CopyInput(inLeft, inRight, count);
+        CopyBus(sideLeft, sideRight, sidechainLeft, sidechainRight, count);
         Sort();
         var rendered = 0;
         for (var e = 0; e < eventCount; e++)
@@ -211,28 +219,25 @@ internal sealed class BlockRenderer
         }
     }
 
-    private void RenderSpan(int offset, int length)
-    {
-        if (session.IsEffect)
-            engine.Process(inputLeft, inputRight, outputLeft, outputRight, offset, length);
-        else
-            engine.Process(outputLeft, outputRight, offset, length);
-    }
+    private void RenderSpan(int offset, int length) => engine.Process(inputLeft, inputRight, sidechainLeft, sidechainRight, outputLeft, outputRight, offset, length);
 
     private void CopyInput(ReadOnlySpan<float> inLeft, ReadOnlySpan<float> inRight, int count)
     {
-        if (!session.IsEffect)
-            return;
+        if (session.IsEffect)
+            CopyBus(inLeft, inRight, inputLeft, inputRight, count);
+    }
 
-        if (inLeft.Length < count)
+    private static void CopyBus(ReadOnlySpan<float> left, ReadOnlySpan<float> right, float[] intoLeft, float[] intoRight, int count)
+    {
+        if (left.Length < count)
         {
-            Array.Clear(inputLeft, 0, count);
-            Array.Clear(inputRight, 0, count);
+            Array.Clear(intoLeft, 0, count);
+            Array.Clear(intoRight, 0, count);
             return;
         }
 
-        inLeft[..count].CopyTo(inputLeft);
-        (inRight.Length >= count ? inRight : inLeft)[..count].CopyTo(inputRight);
+        left[..count].CopyTo(intoLeft);
+        (right.Length >= count ? right : left)[..count].CopyTo(intoRight);
     }
 
     private void EnsureCapacity(int frames)
@@ -242,6 +247,8 @@ internal sealed class BlockRenderer
 
         inputLeft = new float[frames];
         inputRight = new float[frames];
+        sidechainLeft = new float[frames];
+        sidechainRight = new float[frames];
         outputLeft = new float[frames];
         outputRight = new float[frames];
     }

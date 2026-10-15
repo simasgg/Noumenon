@@ -253,23 +253,26 @@ public class SamplePlayerTests
         var player = Make(a, crossfadeMs: 15f);
         var inL = new float[512];
         var inR = new float[512];
-        for (var k = 0; k < 20; k++)
-            Render(player, 512, inL, inR);
 
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var k = 0; k < 500; k++)
+        void Run(int blocks)
         {
-            player.SetSample((k / 50 & 1) == 0 ? a : b);
-            if (k % 37 == 0)
-                player.Retrigger();
+            for (var k = 0; k < blocks; k++)
+            {
+                player.SetSample((k / 50 & 1) == 0 ? a : b);
+                if (k % 37 == 0)
+                    player.Retrigger();
 
-            player.SetLoop(0f, (k & 1) == 0 ? 1f : 0.6f, 15f);
-            player.SetSpeed((k & 1) == 0 ? 0f : 7f, (k & 2) == 0 ? 1f : -0.5f);
-            player.SetInputMix((k & 1) == 0 ? 0.2f : 0.7f);
-            for (var i = 0; i < 512; i++)
-                player.Process(inL[i], inR[i], out _, out _, out _);
+                player.SetLoop(0f, (k & 1) == 0 ? 1f : 0.6f, 15f);
+                player.SetSpeed((k & 1) == 0 ? 0f : 7f, (k & 2) == 0 ? 1f : -0.5f);
+                player.SetInputMix((k & 1) == 0 ? 0.2f : 0.7f);
+                for (var i = 0; i < 512; i++)
+                    player.Process(inL[i], inR[i], out _, out _, out _);
+            }
         }
 
+        Run(120);   // every call once before measuring: a first call may load or compile something
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        Run(500);
         var after = GC.GetAllocatedBytesForCurrentThread();
 
         Assert.Equal(0, after - before);

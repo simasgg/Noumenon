@@ -92,4 +92,13 @@ public enum ParamId
 
     // ---- Added after the matrix (append-only: the index is the plugin ID and the preset key) ----
     Pause, PauseFade, ScopeMode,
+
+    // ---- Phase 9: the sample modes' extras, the wavetable source, the follower's source, the matrix CC, the chord sequencer ----
+    GrainPitchSpread, GrainWindow, GrainScan, GrainWidth,
+    StretchWindow,
+    WavetableKey,
+    EnvFollowerSource, EnvFollowerGain,
+    MatrixCc,
+    ChordSeqOn, ChordSeqSteps, ChordSeqStepTime, ChordSeqType, ChordSeqVoicing, ChordSeqOctave, ChordSeqRoot,
+    ChordSeqStep1, ChordSeqStep2, ChordSeqStep3, ChordSeqStep4, ChordSeqStep5, ChordSeqStep6, ChordSeqStep7, ChordSeqStep8,
 }

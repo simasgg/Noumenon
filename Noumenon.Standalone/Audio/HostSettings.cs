@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Noumenon.Engine.Modulation;
 using Noumenon.Engine.Recording;
 
 namespace Noumenon.Standalone.Audio;
@@ -12,7 +13,7 @@ public enum OutputApi
 
 /// <summary>
 /// What the standalone remembers between runs — the devices, the rate and buffer, the record
-/// format and folder, the transport tempo, the lane limit — as a JSON file in the user's
+/// format and folder, the transport tempo, the lane limit, the learned MIDI controllers — as a JSON file in the user's
 /// application-data folder. Loading never fails: a missing or damaged file yields the defaults,
 /// which open the system's default WASAPI output at its own rate with no input and no MIDI.
 /// </summary>
@@ -56,6 +57,9 @@ internal sealed class HostSettings
 
     /// <summary>The editor's panel size: 1, 1.5 or 2.</summary>
     public float EditorScale { get; set; } = 1f;
+
+    /// <summary>The learned MIDI controllers: they belong to the player's setup, so presets never change them.</summary>
+    public List<MidiMapping> MidiMap { get; set; } = [];
 
     public static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Noumenon");
 
@@ -110,6 +114,7 @@ internal sealed class HostSettings
         PartyIntervalSeconds = other.PartyIntervalSeconds;
         LastPresetFolder = other.LastPresetFolder;
         EditorScale = other.EditorScale;
+        MidiMap = other.MidiMap;
     }
 }
 

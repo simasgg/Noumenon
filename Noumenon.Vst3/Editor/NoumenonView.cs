@@ -9,8 +9,8 @@ namespace Noumenon.Vst3.Editor;
 /// <see cref="PluginEditorHost"/> embeds the shared panel in the host's window and serves its
 /// presets and samples; this answers the plug-view calls and runs the poll on the controller —
 /// the panel's edits go to the host (as one touch per mouse gesture), the randomizer runs when the
-/// engine asks, a latency change is reported, and a preset loaded or a randomize is announced as a
-/// whole new snapshot. The size is fixed at the panel's scale (1×, 1.5×, 2×); choosing another
+/// engine asks, a latency change is reported, and a preset loaded, a randomize or a finished
+/// snapshot morph is announced as a whole new snapshot. The size is fixed at the panel's scale (1×, 1.5×, 2×); choosing another
 /// scale on the panel asks the host's frame to resize. The first time a view opens in an instance,
 /// the host's content scale factor (its DPI) picks the nearest panel scale; after that the user's
 /// choice, saved with the project by the controller, stays.
@@ -21,6 +21,7 @@ internal sealed class NoumenonView : PluginEditorHost, IAudioPluginView
     private readonly PluginSession session;
     private IAudioPluginFrame? frame;
     private bool hostScaling;
+    private bool wasMorphing;
 
     public NoumenonView(NoumenonController controller, PluginSession session)
         : base(session)
@@ -99,7 +100,15 @@ internal sealed class NoumenonView : PluginEditorHost, IAudioPluginView
 
     protected override void Poll()
     {
-        controller.PushChanges();
+        // A morph moves hundreds of values at once: no edits while it glides, then one silent
+        // sync and a restart when it lands, as for a preset load.
+        var morphing = session.Engine.IsMorphing;
+        if (!morphing && wasMorphing)
+            controller.SnapshotChanged();
+        else if (!morphing)
+            controller.PushChanges();
+
+        wasMorphing = morphing;
         if (session.Engine.ConsumeRandomizeRequest())
         {
             session.Randomize();

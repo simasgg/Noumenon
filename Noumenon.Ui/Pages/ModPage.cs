@@ -6,144 +6,100 @@ using Noumenon.Ui.Widgets;
 namespace Noumenon.Ui.Pages;
 
 /// <summary>
-/// The MOD tab: everything the main panel has no room for — the three LFOs, the envelope
-/// follower, the macros, the twelve-slot modulation matrix, the resonator voices and user chords,
-/// play mode, scale and tuning, host sync and engine rate, the Phase 9 sample-mode parameters —
-/// so every parameter in the table is reachable from the editor.
+/// The MOD tab: where modulation comes from and where it goes. Across the top the sources — the
+/// three LFOs and the envelope follower with a live trace each (the follower also chooses what it
+/// listens to: the sampler, the live input, the sidechain, the sections or the output), and the
+/// four macros. Beneath them the twelve-slot matrix, each row with a bar showing what the slot is
+/// adding right now. On the right MIDI — the controller the matrix's CC source follows and every
+/// controller learned from a control's right-click menu — then host sync and engine rate, and the
+/// keys. Any control's right-click also routes a source straight into a free slot.
 /// </summary>
 internal static class ModPage
 {
     private const float Top = 28f;
+    private const float SourcesHeight = 122f;
+    private const float MatrixTop = 156f;
+    private const float RowStep = 38f;
 
     public static PageContent Build(NoumenonEngine engine)
     {
         var inv = CultureInfo.InvariantCulture;
+        var sources = ParameterTable.MatrixSources.ToList();
+        var lfoSource = sources.IndexOf("LFO 1");
+        var followerSource = sources.IndexOf("Env Follower");
         var w = new List<Widget>();
 
         for (var i = 0; i < ParameterTable.LfoCount; i++)
         {
-            var x = 4 + i * 150f;
-            w.Add(new FrameWidget(x, Top, 146, 96, $"LFO {i + 1}"));
+            var x = 4 + i * 166f;
+            var source = lfoSource + i;
+            w.Add(new FrameWidget(x, Top, 162, SourcesHeight, $"LFO {i + 1}"));
             w.Add(new KnobWidget(engine, ParameterTable.Lfo(i, LfoParam.Rate), x + 12, Top + 30, 26, "RATE"));
             w.Add(new KnobWidget(engine, ParameterTable.Lfo(i, LfoParam.Depth), x + 56, Top + 30, 26, "DEPTH"));
-            w.Add(new MenuWidget(engine, ParameterTable.Lfo(i, LfoParam.Shape), x + 10, Top + 68, 128));
+            w.Add(new MenuWidget(engine, ParameterTable.Lfo(i, LfoParam.Shape), x + 8, Top + 76, 88));
+            w.Add(new SourceTraceWidget(() => engine.ModulationSource(source), true, x + 102, Top + 18, 54, 96, $"LFO {i + 1} as the matrix hears it (times its depth)"));
         }
 
-        w.Add(new FrameWidget(454, Top, 150, 96, "ENV FOLLOWER"));
-        w.Add(new KnobWidget(engine, ParamId.EnvFollowerAttack, 466, Top + 30, 26, "ATTACK"));
-        w.Add(new KnobWidget(engine, ParamId.EnvFollowerRelease, 514, Top + 30, 26, "RELEASE"));
-        w.Add(new DisplayTextWidget(() => "level " + engine.EnvelopeFollowerValue.ToString("0.000", inv), 464, Top + 68, 130, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
+        var fx = 502f;
+        w.Add(new FrameWidget(fx, Top, 230, SourcesHeight, "ENV FOLLOWER"));
+        w.Add(new KnobWidget(engine, ParamId.EnvFollowerAttack, fx + 12, Top + 30, 26, "ATTACK"));
+        w.Add(new KnobWidget(engine, ParamId.EnvFollowerRelease, fx + 56, Top + 30, 26, "RELEASE"));
+        w.Add(new KnobWidget(engine, ParamId.EnvFollowerGain, fx + 100, Top + 30, 26, "GAIN"));
+        w.Add(new LabelWidget("HEARS", fx + 8, Top + 76, 34, 14, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new MenuWidget(engine, ParamId.EnvFollowerSource, fx + 42, Top + 76, 92));
+        w.Add(new LabelWidget("drives the AM route and the matrix", fx + 8, Top + 96, 136, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new SourceTraceWidget(() => engine.ModulationSource(followerSource), false, fx + 148, Top + 18, 76, 96, "The envelope follower: the AM route's control and a matrix source"));
 
-        w.Add(new FrameWidget(608, Top, 200, 96, "MACROS"));
+        var mx = 736f;
+        w.Add(new FrameWidget(mx, Top, 260, SourcesHeight, "MACROS"));
         for (var i = 0; i < 4; i++)
-            w.Add(new KnobWidget(engine, ParamId.Macro1 + i, 618 + i * 48, Top + 34, 26, $"M{i + 1}"));
+            w.Add(new KnobWidget(engine, ParamId.Macro1 + i, mx + 18 + i * 62, Top + 36, 32, $"M{i + 1}"));
 
-        w.Add(new FrameWidget(812, Top, 184, 96, "PLAY MODE"));
-        w.Add(new ChoiceButtonsWidget(engine, ParamId.PlayMode, 822, Top + 20, 100, 14));
-        w.Add(new LedWidget(() => engine.Midi.HeldCount > 0, 934, Top + 23, 8, "GATE"));
-        w.Add(new KnobWidget(engine, ParamId.GateAttack, 826, Top + 56, 24, "ATTACK"));
-        w.Add(new KnobWidget(engine, ParamId.GateRelease, 872, Top + 56, 24, "RELEASE"));
-        w.Add(new DisplayTextWidget(() => engine.GateEnvelopeValue.ToString("0.00", inv), 920, Top + 60, 60, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark));
+        w.Add(new LabelWidget("four free knobs for the matrix, the wheel or a host", mx + 8, Top + 96, 244, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
 
-        w.Add(new FrameWidget(4, Top + 102, 420, 360, "MODULATION MATRIX"));
-        w.Add(new LabelWidget("SOURCE", 30, Top + 118, 96, 11, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("TARGET", 132, Top + 118, 200, 11, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("DEPTH", 338, Top + 118, 40, 11, EditorTheme.Left, EditorTheme.SmallFont));
+        // The matrix.
+        w.Add(new FrameWidget(4, MatrixTop, 620, 504, "MODULATION MATRIX"));
+        w.Add(new LabelWidget("SOURCE", 30, MatrixTop + 18, 110, 11, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("TARGET", 146, MatrixTop + 18, 240, 11, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("DEPTH", 396, MatrixTop + 18, 74, 11, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("ADDING NOW", 478, MatrixTop + 18, 138, 11, EditorTheme.Center, EditorTheme.SmallFont));
         for (var slot = 0; slot < ParameterTable.ModSlotCount; slot++)
         {
-            var y = Top + 132 + slot * 27f;
-            w.Add(new LabelWidget((slot + 1).ToString(inv), 10, y, 18, 14, EditorTheme.Center, EditorTheme.SmallFont));
-            w.Add(new MenuWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Source), 30, y, 96));
-            w.Add(new MenuWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Target), 132, y, 200));
-            w.Add(new KnobWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Depth), 346, y - 4, 22, showValue: false));   // the number box beside it is the readout
-            w.Add(new NumberWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Depth), 374, y + 1, 42));
+            var y = MatrixTop + 38 + slot * RowStep;
+            w.Add(new LabelWidget((slot + 1).ToString(inv), 8, y, 18, 14, EditorTheme.Center, EditorTheme.SmallFont));
+            w.Add(new MenuWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Source), 30, y, 110));
+            w.Add(new MenuWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Target), 146, y, 240));
+            w.Add(new KnobWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Depth), 396, y - 4, 22, showValue: false));   // the number box beside it is the readout
+            w.Add(new NumberWidget(engine, ParameterTable.ModSlot(slot, ModSlotParam.Depth), 424, y + 1, 46));
+            w.Add(new ModSlotMeterWidget(engine, slot, 478, y + 3, 138, 9));
         }
 
-        w.Add(new FrameWidget(430, Top + 102, 300, 228, "RESONATOR VOICES"));
-        w.Add(new LabelWidget("NOTE", 454, Top + 118, 40, 11, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("FB", 498, Top + 118, 30, 11, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("DAMP", 544, Top + 118, 30, 11, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("LEVEL", 590, Top + 118, 30, 11, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("PAN", 636, Top + 118, 30, 11, EditorTheme.Center, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("RINGS", 668, Top + 118, 56, 11, EditorTheme.Center, EditorTheme.SmallFont));
-        for (var v = 0; v < ParameterTable.ResoVoiceCount; v++)
-        {
-            var y = Top + 132 + v * 33f;   // leaves the knobs' value strip between the rows
-            var voice = v;
-            w.Add(new LabelWidget((v + 1).ToString(inv), 436, y, 16, 14, EditorTheme.Center, EditorTheme.SmallFont));
-            w.Add(new NumberWidget(engine, ParameterTable.ResoVoice(v, ResoVoiceParam.Note), 454, y + 1, 40));
-            w.Add(new KnobWidget(engine, ParameterTable.ResoVoice(v, ResoVoiceParam.Feedback), 502, y - 4, 22));
-            w.Add(new KnobWidget(engine, ParameterTable.ResoVoice(v, ResoVoiceParam.Damping), 548, y - 4, 22));
-            w.Add(new KnobWidget(engine, ParameterTable.ResoVoice(v, ResoVoiceParam.Level), 594, y - 4, 22));
-            w.Add(new KnobWidget(engine, ParameterTable.ResoVoice(v, ResoVoiceParam.Pan), 640, y - 4, 22));
-            w.Add(new DisplayTextWidget(() => RingingNote(engine, voice), 670, y + 1, 52, 12, font: EditorTheme.SmallValueFont, tooltip: "The note this voice is ringing at: MIDI, chord select, the chord list or the Note above, then the scale"));
-        }
+        // MIDI.
+        var rx = 630f;
+        w.Add(new FrameWidget(rx, MatrixTop, 366, 300, "MIDI"));
+        w.Add(new NumberWidget(engine, ParamId.MatrixCc, rx + 80, MatrixTop + 20, 36, 12, "MATRIX CC", 72));
+        w.Add(new DisplayTextWidget(() => $"now {engine.Midi.Controller(engine.Parameters.GetInt(ParamId.MatrixCc)).ToString("0.00", inv)}", rx + 122, MatrixTop + 20, 70, 12, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark, tooltip: "The value the matrix's CC source follows"));
+        w.Add(new LabelWidget("LEARNED CONTROLLERS", rx + 8, MatrixTop + 40, 200, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new TextButtonWidget("CLEAR ALL", rx + 290, MatrixTop + 38, 68, 14, () => engine.MidiMap.Clear(), tooltip: "Forget every learned controller"));
+        w.Add(new MidiMapListWidget(engine, rx + 6, MatrixTop + 56, 354, 206));
+        w.Add(new LabelWidget("Learn: right-click any control, then move a knob on your controller.", rx + 8, MatrixTop + 268, 354, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
+        w.Add(new LabelWidget("The map stays with the instrument; presets leave it alone.", rx + 8, MatrixTop + 282, 354, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
 
-        w.Add(new FrameWidget(430, Top + 336, 300, 126, "CHORDS"));
-        w.Add(new LabelWidget("CHORD", 440, Top + 352, 44, 14, EditorTheme.Left));
-        w.Add(new MenuWidget(engine, ParamId.ResochordChord, 484, Top + 352, 120));
-        w.Add(new LabelWidget("SELECT", 612, Top + 352, 44, 14, EditorTheme.Left));
-        w.Add(new MenuWidget(engine, ParamId.ResochordChordSelect, 656, Top + 352, 64));
-        w.Add(new ToggleWidget(engine, ParamId.ResochordMidi, 440, Top + 374, 70, 14, "RESO MIDI"));
-        w.Add(new TextButtonWidget("FORGET VOICES", 516, Top + 374, 90, 14, engine.Midi.ClearVoiceNotes, tooltip: "Forget the notes ResoMidi assigned, so the next chord takes all six voices"));
-        w.Add(new LabelWidget("STORE RINGING NOTES AS USER CHORD", 440, Top + 396, 280, 11, EditorTheme.Left, EditorTheme.SmallFont));
-        for (var slot = 0; slot < NoumenonEngine.UserChordCount; slot++)
-        {
-            var index = slot;
-            w.Add(new TextButtonWidget((slot + 1).ToString(inv), 440 + slot * 35f, Top + 410, 30, 14, () => engine.StoreChord(index), tooltip: $"Store as User {slot + 1} (chord list entry {ParameterTable.ResochordChords.Count - NoumenonEngine.UserChordCount + slot + 1})"));
-        }
+        w.Add(new FrameWidget(rx, MatrixTop + 306, 366, 86, "HOST  ·  ENGINE"));
+        w.Add(new ToggleWidget(engine, ParamId.HostSync, rx + 10, MatrixTop + 326, 70, 13, "HOST SYNC"));
+        w.Add(new ToggleWidget(engine, ParamId.RestartOnHostPlay, rx + 86, MatrixTop + 326, 100, 13, "RESTART ON PLAY"));
+        w.Add(new LabelWidget("ENGINE RATE", rx + 10, MatrixTop + 350, 70, 13, EditorTheme.Left));
+        w.Add(new ChoiceButtonsWidget(engine, ParamId.EngineRate, rx + 86, MatrixTop + 350, 70, 13));
+        w.Add(new LabelWidget("(restarts the stream)", rx + 162, MatrixTop + 350, 120, 13, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Host sync snaps lane loops to bars and sequencer steps to beats.", rx + 10, MatrixTop + 370, 350, 12, EditorTheme.Left, EditorTheme.SmallFont, EditorTheme.TextDim));
 
-        w.Add(new DisplayTextWidget(() => UserChordText(engine), 440, Top + 432, 280, 13, font: EditorTheme.SmallValueFont, color: EditorTheme.TextOnDark, tooltip: "The user chord the chord list currently selects, if any"));
-
-        w.Add(new FrameWidget(736, Top + 102, 260, 100, "SCALE  ·  TUNING  ·  HOST"));
-        w.Add(new MenuWidget(engine, ParamId.Scale, 746, Top + 122, 118));
-        w.Add(new MenuWidget(engine, ParamId.ScaleRoot, 870, Top + 122, 48));
-        w.Add(new KnobWidget(engine, ParamId.TuningA4, 934, Top + 118, 24, "A4", labelBelow: true));
-        w.Add(new ToggleWidget(engine, ParamId.HostSync, 746, Top + 146, 70, 13, "HOST SYNC"));
-        w.Add(new ToggleWidget(engine, ParamId.RestartOnHostPlay, 822, Top + 146, 96, 13, "RESTART ON PLAY"));
-        w.Add(new LabelWidget("ENGINE RATE", 746, Top + 168, 70, 13, EditorTheme.Left));
-        w.Add(new ChoiceButtonsWidget(engine, ParamId.EngineRate, 822, Top + 168, 70, 13));
-        w.Add(new LabelWidget("(restarts the stream)", 898, Top + 168, 94, 13, EditorTheme.Left, EditorTheme.SmallFont));
-
-        w.Add(new FrameWidget(736, Top + 208, 260, 122, "SAMPLE MODES"));
-        w.Add(new KnobWidget(engine, ParamId.GrainSize, 746, Top + 238, 24, "SIZE"));
-        w.Add(new KnobWidget(engine, ParamId.GrainDensity, 792, Top + 238, 24, "DENSITY"));
-        w.Add(new KnobWidget(engine, ParamId.GrainPosition, 840, Top + 238, 24, "POS"));
-        w.Add(new KnobWidget(engine, ParamId.GrainSpray, 886, Top + 238, 24, "SPRAY"));
-        w.Add(new KnobWidget(engine, ParamId.StretchAmount, 932, Top + 238, 24, "STRETCH"));
-        w.Add(new LabelWidget("MODE", 746, Top + 278, 40, 14, EditorTheme.Left));
-        w.Add(new MenuWidget(engine, ParamId.SamplerMode, 790, Top + 278, 100));
-        w.Add(new LabelWidget("Granular and Stretch arrive in Phase 9; Classic ignores these.", 746, Top + 298, 244, 24, EditorTheme.Left, EditorTheme.SmallFont));
-
-        w.Add(new FrameWidget(736, Top + 336, 260, 126, "KEYS", inset: true));
-        w.Add(new LabelWidget("Space  restart lanes    R  randomize    M  mute", 746, Top + 354, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("Ctrl+Z / Ctrl+Y  undo / redo", 746, Top + 368, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("Bar: drag · wheel · double-click = default", 746, Top + 386, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("Lane: click the small display to arm, drag to record,", 746, Top + 400, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("release, then the button plays the loop. Right-click: menu.", 746, Top + 414, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
-        w.Add(new LabelWidget("Stack: drag a mark for pitch / level · Scope: drag = phases, wheel = zoom", 746, Top + 432, 244, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new FrameWidget(rx, MatrixTop + 398, 366, 106, "KEYS", inset: true));
+        w.Add(new LabelWidget("Space  restart lanes    R  randomize    M  mute", rx + 10, MatrixTop + 416, 350, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Ctrl+Z / Ctrl+Y  undo / redo    Ctrl+Tab  next page", rx + 10, MatrixTop + 430, 350, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Bar: drag · wheel · double-click = default", rx + 10, MatrixTop + 448, 350, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Right-click a control: its lane, MIDI learn, Modulate with…", rx + 10, MatrixTop + 462, 350, 12, EditorTheme.Left, EditorTheme.SmallFont));
+        w.Add(new LabelWidget("Lane: click the small display to arm, drag to record, release.", rx + 10, MatrixTop + 476, 350, 12, EditorTheme.Left, EditorTheme.SmallFont));
 
         return new PageContent(w, null);
-    }
-
-    private static string RingingNote(NoumenonEngine engine, int voice)
-    {
-        var note = engine.ResochordNote(voice);
-        var nearest = Math.Clamp((int)MathF.Round(note), 0, 127);
-        var cents = (int)MathF.Round((note - nearest) * 100f);
-
-        return cents == 0 ? ParamInfo.NoteName(nearest) : $"{ParamInfo.NoteName(nearest)}{cents:+0;-0}";
-    }
-
-    private static string UserChordText(NoumenonEngine engine)
-    {
-        var chord = engine.Parameters.GetInt(ParamId.ResochordChord);
-        var firstUser = ParameterTable.ResochordChords.Count - NoumenonEngine.UserChordCount;
-        if (chord < firstUser)
-            return "chord list: " + ParameterTable.ResochordChords[Math.Clamp(chord, 0, ParameterTable.ResochordChords.Count - 1)];
-
-        var notes = engine.UserChord(chord - firstUser);
-
-        return $"User {chord - firstUser + 1}: " + string.Join(" ", notes.Select(n => ParamInfo.NoteName(Math.Clamp((int)MathF.Round(n), 0, 127))));
     }
 }

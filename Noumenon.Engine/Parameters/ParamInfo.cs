@@ -50,6 +50,7 @@ public enum ParamGroup
     ModWheel,
     Global,
     ModMatrix,
+    ChordSequencer,
 }
 
 [Flags]

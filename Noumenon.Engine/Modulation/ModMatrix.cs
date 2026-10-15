@@ -10,7 +10,8 @@ namespace Noumenon.Engine.Modulation;
 /// musically and a level linearly, on top of whatever the lane or the fader gave it. Sources are
 /// filled once per tick in the order of the parameter table's list: none, P1, P2 (as ±1 over
 /// ±48 semitones), the three LFOs (times their depth), the envelope follower, MIDI velocity,
-/// aftertouch, the mod wheel, the chosen controller, and the four macros.
+/// aftertouch, the mod wheel, the controller the Matrix CC parameter names, and the four macros.
+/// The panel reads the sources back to draw them.
 /// </summary>
 internal sealed class ModMatrix
 {
@@ -29,7 +30,7 @@ internal sealed class ModMatrix
 
     public Lfo[] Lfos { get; } = [new(), new(), new()];
 
-    public float Source(int index) => sources[index];
+    public float Source(int index) => (uint)index < SourceCount ? Volatile.Read(ref sources[index]) : 0f;
 
     public void Reset(ulong seed)
     {
@@ -56,7 +57,7 @@ internal sealed class ModMatrix
         sources[SourceVelocity] = midi.LastVelocity;
         sources[SourceAftertouch] = midi.Aftertouch;
         sources[SourceWheel] = midi.Wheel;
-        sources[SourceController] = midi.Controller(midi.MatrixController);
+        sources[SourceController] = midi.Controller((int)resolved[(int)ParamId.MatrixCc]);
         sources[SourceMacro1] = resolved[(int)ParamId.Macro1];
         sources[SourceMacro1 + 1] = resolved[(int)ParamId.Macro2];
         sources[SourceMacro1 + 2] = resolved[(int)ParamId.Macro3];
